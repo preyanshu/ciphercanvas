@@ -146,6 +146,17 @@ pub mod proposal_system {
         vote_encryption_pubkey: [u8; 32],
         vote_nonce: u128,
     ) -> Result<()> {
+        // Manually verify and deserialize round_metadata
+        let (expected_round_pda, _bump) = Pubkey::find_program_address(&[b"round_metadata"], &crate::ID);
+        require!(
+            ctx.accounts.round_metadata.key() == expected_round_pda,
+            ErrorCode::InvalidAuthority
+        );
+        
+        // Deserialize the round_metadata account
+        let round_metadata_data = ctx.accounts.round_metadata.try_borrow_data()?;
+        let _round_metadata: RoundMetadataAccount = AnchorDeserialize::deserialize(&mut &round_metadata_data[8..])?;
+        
         require!(
             proposal_id < ctx.accounts.system_acc.next_proposal_id,
             ErrorCode::InvalidProposalId
@@ -546,6 +557,8 @@ pub struct VoteForProposal<'info> {
         bump,
     )]
     pub vote_receipt: Account<'info, VoteReceiptAccount>,
+    /// CHECK: Manually verified round_metadata PDA
+    pub round_metadata: UncheckedAccount<'info>,
 }
 
 #[callback_accounts("vote_for_proposal")]
