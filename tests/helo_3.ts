@@ -180,6 +180,7 @@ describe("Proposal System", () => {
     // Note: Proposal system is already initialized in the first test or before hook
     console.log("Using existing proposal system from first test...");
 
+   
     // Submit multiple proposals
     const proposals = [
       { title: "Increase Token Supply", description: "Proposal to increase the total token supply by 20%" },
@@ -214,19 +215,37 @@ describe("Proposal System", () => {
     const voter2 = anchor.web3.Keypair.generate();
     const voter3 = anchor.web3.Keypair.generate();
 
-    // Airdrop SOL to each voter for transaction fees
+    // Airdrop SOL to each voter for transaction fees and account creation
     console.log(`Airdropping SOL to voters...`);
-    await Promise.all([
-      provider.connection.confirmTransaction(
-        await provider.connection.requestAirdrop(voter1.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL)
-      ),
-      provider.connection.confirmTransaction(
-        await provider.connection.requestAirdrop(voter2.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL)
-      ),
-      provider.connection.confirmTransaction(
-        await provider.connection.requestAirdrop(voter3.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL)
-      ),
-    ]);
+    
+    // Airdrop to voter1
+    const airdrop1Sig = await provider.connection.requestAirdrop(voter1.publicKey, 5 * anchor.web3.LAMPORTS_PER_SOL);
+    console.log(`Voter1 airdrop signature: ${airdrop1Sig}`);
+    await provider.connection.confirmTransaction(airdrop1Sig);
+    
+    // Airdrop to voter2
+    const airdrop2Sig = await provider.connection.requestAirdrop(voter2.publicKey, 5 * anchor.web3.LAMPORTS_PER_SOL);
+    console.log(`Voter2 airdrop signature: ${airdrop2Sig}`);
+    await provider.connection.confirmTransaction(airdrop2Sig);
+    
+    // Airdrop to voter3
+    const airdrop3Sig = await provider.connection.requestAirdrop(voter3.publicKey, 5 * anchor.web3.LAMPORTS_PER_SOL);
+    console.log(`Voter3 airdrop signature: ${airdrop3Sig}`);
+    await provider.connection.confirmTransaction(airdrop3Sig);
+    
+    // Check balances after airdrop
+    const voter1Balance = await provider.connection.getBalance(voter1.publicKey);
+    const voter2Balance = await provider.connection.getBalance(voter2.publicKey);
+    const voter3Balance = await provider.connection.getBalance(voter3.publicKey);
+    
+    console.log(`Voter1 balance: ${voter1Balance / anchor.web3.LAMPORTS_PER_SOL} SOL`);
+    console.log(`Voter2 balance: ${voter2Balance / anchor.web3.LAMPORTS_PER_SOL} SOL`);
+    console.log(`Voter3 balance: ${voter3Balance / anchor.web3.LAMPORTS_PER_SOL} SOL`);
+    
+    if (voter1Balance === 0 || voter2Balance === 0 || voter3Balance === 0) {
+      throw new Error("Airdrop failed - voter accounts have 0 balance!");
+    }
+    
     console.log(`✅ Airdrop complete for all voters`);
 
     // Define voting pattern: 2 voters for proposal 0, 1 voter for proposal 1
@@ -235,6 +254,62 @@ describe("Proposal System", () => {
       { keypair: voter2, proposalId: 0, name: "Voter 2" },
       { keypair: voter3, proposalId: 1, name: "Voter 3" },
     ];
+
+      // Verify round_metadata account is initialized
+      console.log("\n========== Verifying Round Metadata Account ==========");
+      const [roundMetadataPDA2] = PublicKey.findProgramAddressSync(
+        [Buffer.from("round_metadata")],
+        program.programId
+      );
+      console.log(`Round Metadata PDA: ${roundMetadataPDA2.toBase58()}`);
+      
+      try {
+        const roundMetadata = await program.account.roundMetadataAccount.fetch(roundMetadataPDA2);
+        console.log(`✅ Round Metadata Account Found!`);
+        console.log(`Current Round: ${roundMetadata.currentRound}`);
+        console.log(`Bump: ${roundMetadata.bump}`);
+      } catch (error) {
+        console.log(`❌ Round Metadata Account NOT Found!`);
+        console.log(`Error: ${error}`);
+        throw new Error("Round metadata account not initialized - run the first test first!");
+      }
+      console.log("=======================================================\n");
+
+      // Debug: Check system account state
+      console.log("\n========== Debugging System Account ==========");
+      const [debugSystemAccPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from("proposal_system")],
+        program.programId
+      );
+      console.log(`System Account PDA: ${debugSystemAccPDA.toBase58()}`);
+      
+      try {
+        const systemAcc = await program.account.proposalSystemAccount.fetch(debugSystemAccPDA);
+        console.log(`✅ System Account Found!`);
+        console.log(`Next Proposal ID: ${systemAcc.nextProposalId}`);
+        console.log(`Authority: ${systemAcc.authority.toString()}`);
+        console.log(`Winning Proposal ID: ${systemAcc.winningProposalId}`);
+        console.log(`Bump: ${systemAcc.bump}`);
+      } catch (error) {
+        console.log(`❌ System Account NOT Found!`);
+        console.log(`Error: ${error}`);
+        throw new Error("System account not initialized - run the first test first!");
+      }
+      console.log("=======================================================\n");
+
+      // Derive system account PDA once (outside the loop)
+      const [systemAccPDA, systemAccBump] = PublicKey.findProgramAddressSync(
+        [Buffer.from("proposal_system")],
+        program.programId
+      );
+      console.log(`🔧 Using System Account PDA: ${systemAccPDA.toBase58()}`);
+      console.log(`🔧 System Account Bump: ${systemAccBump}`);
+      
+      // Double-check: verify the PDA matches what we fetched earlier
+      if (systemAccPDA.toBase58() !== debugSystemAccPDA.toBase58()) {
+        throw new Error(`PDA mismatch! Debug: ${debugSystemAccPDA.toBase58()}, Vote: ${systemAccPDA.toBase58()}`);
+      }
+      console.log(`✅ PDA verification passed - both PDAs match!`);
 
     // Store nonces client-side for each voter (simulating localStorage)
     const clientSideNonces = new Map<string, Buffer>();
@@ -260,6 +335,24 @@ describe("Proposal System", () => {
 
       console.log(`\n=== ${voter.name} voting for proposal ${proposalId} ===`);
 
+      // Check voter balance before voting
+      const voterBalanceBefore = await provider.connection.getBalance(voter.keypair.publicKey);
+      console.log(`💰 ${voter.name} balance before voting: ${voterBalanceBefore / anchor.web3.LAMPORTS_PER_SOL} SOL`);
+      
+      if (voterBalanceBefore === 0) {
+        throw new Error(`${voter.name} has 0 SOL balance - cannot vote!`);
+      }
+
+      console.log("lol",PublicKey.findProgramAddressSync(
+        [Buffer.from("round_metadata")],
+        program.programId
+      )[0].toBase58());
+
+      // Debug: Check what we're about to vote for
+      console.log(`🔍 Debug: About to vote for proposal ID: ${proposalId}`);
+      console.log(`🔍 Debug: Voter: ${voter.name}`);
+      console.log(`🔍 Debug: Expected to be valid (should be < next_proposal_id)`);
+
       const voteComputationOffset = new anchor.BN(randomBytes(8), "hex");
 
       const queueVoteSig = await retryRpcCall(async () => {
@@ -274,6 +367,7 @@ describe("Proposal System", () => {
           )
           .accountsPartial({
             payer: voter.keypair.publicKey, // Explicitly set the voter as payer
+            systemAcc: systemAccPDA, // Use the pre-derived PDA
             computationAccount: getComputationAccAddress(
               program.programId,
               voteComputationOffset
@@ -286,10 +380,14 @@ describe("Proposal System", () => {
               program.programId,
               Buffer.from(getCompDefAccOffset("vote_for_proposal")).readUInt32LE()
             ),
+            roundMetadata: PublicKey.findProgramAddressSync(
+              [Buffer.from("round_metadata")],
+              program.programId
+            )[0],
           })
           .signers([voter.keypair])
           .rpc({ 
-            skipPreflight: true, 
+            skipPreflight: false, 
             commitment: "confirmed",
             preflightCommitment: "confirmed"
           });
@@ -336,6 +434,7 @@ describe("Proposal System", () => {
         )
         .accountsPartial({
           payer: voters[0].keypair.publicKey, // Explicitly set the voter as payer
+          systemAcc: systemAccPDA, // Use the pre-derived PDA
           computationAccount: getComputationAccAddress(
             program.programId,
             secondVoteOffset
@@ -348,6 +447,10 @@ describe("Proposal System", () => {
             program.programId,
             Buffer.from(getCompDefAccOffset("vote_for_proposal")).readUInt32LE()
           ),
+          roundMetadata: PublicKey.findProgramAddressSync(
+            [Buffer.from("round_metadata")],
+            program.programId
+          )[0],
         })
         .signers([voters[0].keypair])
         .rpc({ 
@@ -405,6 +508,7 @@ describe("Proposal System", () => {
 
     const revealEvent = await revealEventPromise;
     console.log(`Winning proposal ID is `, revealEvent.winningProposalId);
+    console.log(`Round ID is `, revealEvent.roundId);
     
     // The winning proposal should be 0 (2 votes vs 1 vote for proposal 1)
     expect(revealEvent.winningProposalId).to.equal(0);
@@ -417,13 +521,62 @@ describe("Proposal System", () => {
     );
     const proposalSystemAccount = await program.account.proposalSystemAccount.fetch(proposalSystemPDA);
     
-    console.log(`Stored winning_proposal_id: ${proposalSystemAccount}`);
+    console.log(`Stored winning_proposal_id: ${proposalSystemAccount.winningProposalId}`);
     expect(proposalSystemAccount.winningProposalId).to.equal(0);
     console.log(`✅ Winner is permanently stored on-chain!`);
+    
+    // Verify round metadata was incremented
+    const [roundMetadataPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from("round_metadata")],
+      program.programId
+    );
+    const roundMetadata = await program.account.roundMetadataAccount.fetch(roundMetadataPDA);
+    console.log(`\n========== Round Metadata ==========`);
+    console.log(`Current Round (after reveal): ${roundMetadata.currentRound}`);
+    expect(roundMetadata.currentRound.toNumber()).to.equal(1); // Should be 1 after first round
+    console.log(`✅ Round metadata incremented correctly!`);
+
+    // Now create the round history account using the separate instruction
+    console.log(`\n========== Creating Round History Account ==========`);
+    const roundId = 0; // The round that just completed
+    const winningProposalId = revealEvent.winningProposalId;
+    const totalProposals = 3; // We submitted 3 proposals
+    
+    const createRoundHistorySig = await retryRpcCall(async () => {
+      return await program.methods
+        .createRoundHistory(new anchor.BN(roundId), winningProposalId, totalProposals)
+        .rpc({ 
+          skipPreflight: true, 
+          commitment: "confirmed",
+          preflightCommitment: "confirmed"
+        });
+    });
+    console.log(`Round history created with signature: ${createRoundHistorySig}`);
+
+    // Verify the voting round history was created
+    const [roundHistoryPDA] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("voting_round_history"),
+        proposalSystemPDA.toBuffer(),
+        Buffer.from(new Uint8Array(new BigUint64Array([BigInt(roundId)]).buffer)),
+      ],
+      program.programId
+    );
+    const roundHistory = await program.account.votingRoundHistoryAccount.fetch(roundHistoryPDA);
+    console.log(`\n========== Voting Round History ==========`);
+    console.log(`Round ID: ${roundHistory.roundId}`);
+    console.log(`Winning Proposal ID: ${roundHistory.winningProposalId}`);
+    console.log(`Total Proposals: ${roundHistory.totalProposals}`);
+    console.log(`Revealed At: ${new Date(roundHistory.revealedAt.toNumber() * 1000).toISOString()}`);
+    console.log(`Revealed By: ${roundHistory.revealedBy.toString()}`);
+    expect(roundHistory.roundId.toNumber()).to.equal(roundId);
+    expect(roundHistory.winningProposalId).to.equal(winningProposalId);
+    expect(roundHistory.totalProposals).to.equal(totalProposals);
+    console.log(`✅ Round history stored correctly!`);
+    console.log(`Note: Vote counts can be calculated on frontend from state if needed`);
     console.log(`=======================================================\n`);
 
     // Fetch and display the vote receipt for Voter 1 (who voted for the winning proposal)
-    const winningProposalId = revealEvent.winningProposalId;
     console.log(`\n========== Fetching Vote Receipt for ${voters[0].name} ==========`);
     
     // PDA is derived from voter only (not proposal_id) - one vote per voter!

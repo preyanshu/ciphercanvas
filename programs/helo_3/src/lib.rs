@@ -6,7 +6,7 @@ const COMP_DEF_OFFSET_INIT_PROPOSAL_VOTES: u32 = comp_def_offset("init_proposal_
 const COMP_DEF_OFFSET_VOTE_FOR_PROPOSAL: u32 = comp_def_offset("vote_for_proposal");
 const COMP_DEF_OFFSET_REVEAL_WINNER: u32 = comp_def_offset("reveal_winning_proposal");
 
-declare_id!("AtAC7Xh946P8LNKdcKFWyrZnQjeCid3M8fvDu1zS5UHk");
+declare_id!("G5QxLUHK6fMzRWWevU5GMCEZCfnUEzMZZuqUCpjVf8EX");
 
 #[arcium_program]
 pub mod proposal_system {
@@ -39,6 +39,10 @@ pub mod proposal_system {
         ctx.accounts.system_acc.proposal_votes = [[0; 32]; 10]; // 10 proposals max
         ctx.accounts.system_acc.next_proposal_id = 0;
         ctx.accounts.system_acc.winning_proposal_id = None; // No winner yet
+
+        // Initialize the round metadata account (separate from system_acc to avoid MXE issues)
+        ctx.accounts.round_metadata.bump = ctx.bumps.round_metadata;
+        ctx.accounts.round_metadata.current_round = 0; // Start at round 0
 
         let args = vec![Argument::PlaintextU128(nonce)];
 
@@ -227,7 +231,8 @@ pub mod proposal_system {
     /// Reveals the winning proposal with the most votes.
     ///
     /// Only the system authority can call this function to decrypt and reveal the vote tallies.
-    /// The MPC computation finds the proposal with the maximum votes and returns its ID.
+    /// The MPC computation finds the proposal with the maximum votes and returns its ID and vote count.
+    /// Creates a voting round history account to permanently store the results.
     ///
     /// # Arguments
     /// * `system_id` - The system ID to reveal results for
@@ -241,7 +246,7 @@ pub mod proposal_system {
             ErrorCode::InvalidAuthority
         );
 
-        msg!("Revealing winning proposal");
+        msg!("Revealing winning proposal for round {}", ctx.accounts.round_metadata.current_round);
 
         let args = vec![
             Argument::PlaintextU128(ctx.accounts.system_acc.nonce),
@@ -255,15 +260,22 @@ pub mod proposal_system {
 
         ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
+
         queue_computation(
             ctx.accounts,
             computation_offset,
             args,
             None,
-            vec![RevealWinningProposalCallback::callback_ix(&[CallbackAccount {
-                pubkey: ctx.accounts.system_acc.key(),
-                is_writable: true,
-            }])],
+            vec![RevealWinningProposalCallback::callback_ix(&[
+                CallbackAccount {
+                    pubkey: ctx.accounts.system_acc.key(),
+                    is_writable: true,
+                },
+                CallbackAccount {
+                    pubkey: ctx.accounts.round_metadata.key(),
+                    is_writable: true,
+                },
+            ])],
         )?;
         Ok(())
     }
@@ -273,15 +285,61 @@ pub mod proposal_system {
         ctx: Context<RevealWinningProposalCallback>,
         output: ComputationOutputs<RevealWinningProposalOutput>,
     ) -> Result<()> {
-        let o = match output {
+        let winning_proposal_id = match output {
             ComputationOutputs::Success(RevealWinningProposalOutput { field_0 }) => field_0,
             _ => return Err(ErrorCode::AbortedComputation.into()),
         };
 
-        // Store the winning proposal ID on-chain
-        ctx.accounts.system_acc.winning_proposal_id = Some(o);
+        // Store the winning proposal ID on-chain in the system account
+        ctx.accounts.system_acc.winning_proposal_id = Some(winning_proposal_id);
 
-        emit!(WinningProposalEvent { winning_proposal_id: o });
+        // Get current round before incrementing
+        let current_round_id = ctx.accounts.round_metadata.current_round;
+
+        // Note: Round history account will be created in a separate instruction
+
+        // Increment the round counter for the next voting round
+        ctx.accounts.round_metadata.current_round += 1;
+
+        msg!(
+            "Round {} completed - Winner: Proposal {}", 
+            current_round_id, 
+            winning_proposal_id
+        );
+
+        emit!(WinningProposalEvent { 
+            winning_proposal_id,
+            round_id: current_round_id,
+        });
+
+        Ok(())
+    }
+
+    /// Creates a voting round history account after a winner has been revealed.
+    /// This is called separately from the reveal callback to avoid MXE complexity.
+    pub fn create_round_history(
+        ctx: Context<CreateRoundHistory>,
+        round_id: u64,
+        winning_proposal_id: u8,
+        total_proposals: u8,
+    ) -> Result<()> {
+        // Get current timestamp
+        let clock = Clock::get()?;
+        let current_timestamp = clock.unix_timestamp;
+
+        // Initialize the round history account
+        ctx.accounts.round_history.bump = ctx.bumps.round_history;
+        ctx.accounts.round_history.round_id = round_id;
+        ctx.accounts.round_history.winning_proposal_id = winning_proposal_id;
+        ctx.accounts.round_history.revealed_at = current_timestamp;
+        ctx.accounts.round_history.revealed_by = ctx.accounts.payer.key();
+        ctx.accounts.round_history.total_proposals = total_proposals;
+
+        msg!(
+            "Created round history for round {} - Winner: Proposal {}",
+            round_id,
+            winning_proposal_id
+        );
 
         Ok(())
     }
@@ -352,6 +410,14 @@ pub struct InitProposalSystem<'info> {
         bump,
     )]
     pub system_acc: Account<'info, ProposalSystemAccount>,
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + RoundMetadataAccount::INIT_SPACE,
+        seeds = [b"round_metadata"],
+        bump,
+    )]
+    pub round_metadata: Account<'info, RoundMetadataAccount>,
 }
 
 #[callback_accounts("init_proposal_votes")]
@@ -577,6 +643,12 @@ pub struct RevealWinningProposal<'info> {
         bump = system_acc.bump
     )]
     pub system_acc: Account<'info, ProposalSystemAccount>,
+    #[account(
+        mut,
+        seeds = [b"round_metadata"],
+        bump = round_metadata.bump
+    )]
+    pub round_metadata: Account<'info, RoundMetadataAccount>,
 }
 
 #[callback_accounts("reveal_winning_proposal")]
@@ -592,6 +664,29 @@ pub struct RevealWinningProposalCallback<'info> {
     pub instructions_sysvar: AccountInfo<'info>,
     #[account(mut)]
     pub system_acc: Account<'info, ProposalSystemAccount>,
+    #[account(mut)]
+    pub round_metadata: Account<'info, RoundMetadataAccount>,
+}
+
+#[derive(Accounts)]
+#[instruction(round_id: u64)]
+pub struct CreateRoundHistory<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        seeds = [b"proposal_system"],
+        bump = system_acc.bump
+    )]
+    pub system_acc: Account<'info, ProposalSystemAccount>,
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + VotingRoundHistoryAccount::INIT_SPACE,
+        seeds = [b"voting_round_history", system_acc.key().as_ref(), round_id.to_le_bytes().as_ref()],
+        bump,
+    )]
+    pub round_history: Account<'info, VotingRoundHistoryAccount>,
+    pub system_program: Program<'info, System>,
 }
 
 #[init_computation_definition_accounts("reveal_winning_proposal", payer)]
@@ -613,6 +708,7 @@ pub struct InitRevealWinnerCompDef<'info> {
 }
 
 /// Represents the proposal voting system with encrypted vote tallies for all proposals.
+/// NOTE: This account is passed to MXE - DO NOT modify its structure!
 #[account]
 #[derive(InitSpace)]
 pub struct ProposalSystemAccount {
@@ -670,6 +766,37 @@ pub struct VoteReceiptAccount {
     pub vote_encryption_pubkey: [u8; 32],
 }
 
+/// Represents the history of a completed voting round.
+/// This account is created after a winner is revealed and stores the results permanently.
+/// Note: Vote counts are NOT stored here - they can be calculated on the frontend from the state.
+#[account]
+#[derive(InitSpace)]
+pub struct VotingRoundHistoryAccount {
+    /// PDA bump seed
+    pub bump: u8,
+    /// Round identifier (incremented for each voting round)
+    pub round_id: u64,
+    /// ID of the winning proposal
+    pub winning_proposal_id: u8,
+    /// Timestamp when the winner was revealed
+    pub revealed_at: i64,
+    /// Authority who revealed the results
+    pub revealed_by: Pubkey,
+    /// Total number of proposals in this round
+    pub total_proposals: u8,
+}
+
+/// Metadata account for tracking round information.
+/// This is separate from ProposalSystemAccount to avoid modifying accounts passed to MXE.
+#[account]
+#[derive(InitSpace)]
+pub struct RoundMetadataAccount {
+    /// PDA bump seed
+    pub bump: u8,
+    /// Current voting round number (incremented each time a winner is revealed)
+    pub current_round: u64,
+}
+
 #[error_code]
 pub enum ErrorCode {
     #[msg("Invalid authority")]
@@ -700,6 +827,7 @@ pub struct ProposalSubmittedEvent {
 #[event]
 pub struct WinningProposalEvent {
     pub winning_proposal_id: u8,
+    pub round_id: u64,
 }
 
 #[event]

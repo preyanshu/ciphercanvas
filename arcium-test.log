@@ -64,9 +64,9 @@ warning: unexpected `cfg` condition value: `anchor-debug`
    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 warning: unexpected `cfg` condition value: `anchor-debug`
-   --> programs/helo_3/src/lib.rs:306:10
+   --> programs/helo_3/src/lib.rs:345:10
     |
-306 | #[derive(Accounts)]
+345 | #[derive(Accounts)]
     |          ^^^^^^^^
     |
     = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
@@ -75,31 +75,9 @@ warning: unexpected `cfg` condition value: `anchor-debug`
     = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 warning: unexpected `cfg` condition value: `anchor-debug`
-   --> programs/helo_3/src/lib.rs:373:10
+   --> programs/helo_3/src/lib.rs:412:10
     |
-373 | #[derive(Accounts)]
-    |          ^^^^^^^^
-    |
-    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
-    = help: consider adding `anchor-debug` as a feature in `Cargo.toml`
-    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
-    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-warning: unexpected `cfg` condition value: `anchor-debug`
-   --> programs/helo_3/src/lib.rs:389:10
-    |
-389 | #[derive(Accounts)]
-    |          ^^^^^^^^
-    |
-    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
-    = help: consider adding `anchor-debug` as a feature in `Cargo.toml`
-    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
-    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-warning: unexpected `cfg` condition value: `anchor-debug`
-   --> programs/helo_3/src/lib.rs:406:10
-    |
-406 | #[derive(Accounts)]
+412 | #[derive(Accounts)]
     |          ^^^^^^^^
     |
     = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
@@ -119,9 +97,9 @@ warning: unexpected `cfg` condition value: `anchor-debug`
     = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 warning: unexpected `cfg` condition value: `anchor-debug`
-   --> programs/helo_3/src/lib.rs:501:10
+   --> programs/helo_3/src/lib.rs:445:10
     |
-501 | #[derive(Accounts)]
+445 | #[derive(Accounts)]
     |          ^^^^^^^^
     |
     = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
@@ -130,9 +108,9 @@ warning: unexpected `cfg` condition value: `anchor-debug`
     = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 warning: unexpected `cfg` condition value: `anchor-debug`
-   --> programs/helo_3/src/lib.rs:516:10
+   --> programs/helo_3/src/lib.rs:467:10
     |
-516 | #[derive(Accounts)]
+467 | #[derive(Accounts)]
     |          ^^^^^^^^
     |
     = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
@@ -141,9 +119,9 @@ warning: unexpected `cfg` condition value: `anchor-debug`
     = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 warning: unexpected `cfg` condition value: `anchor-debug`
-   --> programs/helo_3/src/lib.rs:534:10
+   --> programs/helo_3/src/lib.rs:540:10
     |
-534 | #[derive(Accounts)]
+540 | #[derive(Accounts)]
     |          ^^^^^^^^
     |
     = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
@@ -152,9 +130,9 @@ warning: unexpected `cfg` condition value: `anchor-debug`
     = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 warning: unexpected `cfg` condition value: `anchor-debug`
-   --> programs/helo_3/src/lib.rs:598:10
+   --> programs/helo_3/src/lib.rs:555:10
     |
-598 | #[derive(Accounts)]
+555 | #[derive(Accounts)]
     |          ^^^^^^^^
     |
     = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
@@ -163,9 +141,31 @@ warning: unexpected `cfg` condition value: `anchor-debug`
     = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 warning: unexpected `cfg` condition value: `anchor-debug`
-   --> programs/helo_3/src/lib.rs:613:10
+   --> programs/helo_3/src/lib.rs:573:10
     |
-613 | #[derive(Accounts)]
+573 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = help: consider adding `anchor-debug` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> programs/helo_3/src/lib.rs:637:10
+    |
+637 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = help: consider adding `anchor-debug` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> programs/helo_3/src/lib.rs:663:10
+    |
+663 | #[derive(Accounts)]
     |          ^^^^^^^^
     |
     = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
@@ -185,8 +185,8 @@ warning: use of deprecated method `anchor_lang::prelude::AccountInfo::<'a>::real
 Error: Function _ZN101_$LT$helo_3..VoteForProposal$u20$as$u20$anchor_lang..Accounts$LT$helo_3..VoteForProposalBumps$GT$$GT$12try_accounts17h516bc2479c36a4c4E Stack offset of 4104 exceeded max offset of 4096 by 8 bytes, please minimize large stack variables. Estimated function frame size: 4160 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
 
 warning: `helo_3` (lib) generated 20 warnings (5 duplicates)
-    Finished `release` profile [optimized] target(s) in 0.33s
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+    Finished `release` profile [optimized] target(s) in 0.39s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
      Running unittests src/lib.rs (/home/preyanshu/helo_3/target/debug/deps/helo_3-1d44b40076a2c7ef)
 Removed artifacts/operator_acc_CxpN_bErP.json
 Removed artifacts/arx_ata_2uzU_FQpm.json
@@ -229,7 +229,7 @@ Running test suite: "/home/preyanshu/helo_3/Anchor.toml"
 
 yarn run v1.22.22
 $ /home/preyanshu/helo_3/node_modules/.bin/ts-mocha -p ./tsconfig.json -t 1000000 'tests/**/*.ts'
-(node:38516) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/preyanshu/helo_3/tests/helo_3.ts is not specified and it doesn't parse as CommonJS.
+(node:55528) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/preyanshu/helo_3/tests/helo_3.ts is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to /home/preyanshu/helo_3/package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
@@ -245,20 +245,18 @@ MXE x25519 pubkey is Uint8Array(32) [
 ]
 Initializing proposal votes computation definition
 Init proposal votes computation definition pda is  CfQDyafunZMFeGKmZg5jVkbmQXuwkj6WWbp3oL7paPPp
-Init proposal votes computation definition transaction 3Q4hz4WW1enjA2uMZdG8C4cFU8ehA8bv613iJZnb2LSTrZ7yb8uJRWneW2ypji8bLY19PJzAe9VRfSu7633WodbC
-Proposal votes computation definition initialized with signature 3Q4hz4WW1enjA2uMZdG8C4cFU8ehA8bv613iJZnb2LSTrZ7yb8uJRWneW2ypji8bLY19PJzAe9VRfSu7633WodbC
+Init proposal votes computation definition transaction 4y37EiZ7hCtbD8fyyKVWrdmDNEhX9a3kbgRAHFxmZ8kp7816xwJdAHNxQiYxQ3FESaF6ij2VdsHbeT2tfxNr933Q
+Proposal votes computation definition initialized with signature 4y37EiZ7hCtbD8fyyKVWrdmDNEhX9a3kbgRAHFxmZ8kp7816xwJdAHNxQiYxQ3FESaF6ij2VdsHbeT2tfxNr933Q
 Initializing vote for proposal computation definition
 Vote for proposal computation definition pda is  2774m2dnD7iJsdaJf2mi83f7LDmWS8KnaW9qj2D97CDy
 Attempt 1 failed with blockhash error, retrying in 1000ms...
 Vote for proposal computation definition pda is  2774m2dnD7iJsdaJf2mi83f7LDmWS8KnaW9qj2D97CDy
-Init vote for proposal computation definition transaction 5C7tEyZoUevFkQrtJ7D64jpWFZrg6MdzykT2JjX6hi49ecT1yBFS5kwcnYGtBDXB6wAKV83CkFsMtkhRfMi7Qa8z
-Vote for proposal computation definition initialized with signature 5C7tEyZoUevFkQrtJ7D64jpWFZrg6MdzykT2JjX6hi49ecT1yBFS5kwcnYGtBDXB6wAKV83CkFsMtkhRfMi7Qa8z
+Init vote for proposal computation definition transaction 5ZvcykG7YL46ce5AQGjTMJHAbDJMKf532rgtJqRLR6X8rgFuKm5tWgi5Gnk49Q3fDacGeHd78D2Kuxn5WPUEZhSA
+Vote for proposal computation definition initialized with signature 5ZvcykG7YL46ce5AQGjTMJHAbDJMKf532rgtJqRLR6X8rgFuKm5tWgi5Gnk49Q3fDacGeHd78D2Kuxn5WPUEZhSA
 Initializing reveal winning proposal computation definition
 Reveal winning proposal computation definition pda is  Cw7kjZo2NP1qoi6UuEfPFtCaFiqzoN83MyYouove9meJ
-Attempt 1 failed with blockhash error, retrying in 1000ms...
-Reveal winning proposal computation definition pda is  Cw7kjZo2NP1qoi6UuEfPFtCaFiqzoN83MyYouove9meJ
-Init reveal winning proposal computation definition transaction 34uqXVPSaAC9jXncqCpJx12qhR5m8qYiZgjaenNTsY7SY7BgRKh18vmEVYjjZ6KCXJ2L64vwnuk4K4ezXbzYz2Dv
-Reveal winning proposal computation definition initialized with signature 34uqXVPSaAC9jXncqCpJx12qhR5m8qYiZgjaenNTsY7SY7BgRKh18vmEVYjjZ6KCXJ2L64vwnuk4K4ezXbzYz2Dv
+Init reveal winning proposal computation definition transaction YCg3HW1JoMu5WDExeYwgNfvAhjzpznxNLbkXvu7JqjeZYHyJ9CGvJsbPXm2PmTENGBAbwcVzp728SiyTx4pGPJn
+Reveal winning proposal computation definition initialized with signature YCg3HW1JoMu5WDExeYwgNfvAhjzpznxNLbkXvu7JqjeZYHyJ9CGvJsbPXm2PmTENGBAbwcVzp728SiyTx4pGPJn
 MXE x25519 pubkey is Uint8Array(32) [
    90,  50, 173, 201,  28,  74,  42, 209,
    43, 249,  92, 126,   9, 155, 173,  30,
@@ -266,8 +264,8 @@ MXE x25519 pubkey is Uint8Array(32) [
     0, 207,  75, 162, 241, 111, 122,   9
 ]
 Attempting to initialize proposal system...
-Proposal system initialized with signature 41MopWC7oznEf82iCXxSmeWW5TFndwVZMFA8pxBB3dKLCjNHgJrKAXox3EuQKj6o8cqUv5tHzbta3wi9gSj4KMhf
-    ✔ can initialize the proposal system (411ms)
+Proposal system initialized with signature 5zS6FLkCSMdYMucfQPsS6SME86u5jkj8dQJYzbzYhyS8cdyqDuTQishAPyt2BWeBHJek9GsnzyH2qVvuBEg2MFnD
+    ✔ can initialize the proposal system (409ms)
 MXE x25519 pubkey is Uint8Array(32) [
    90,  50, 173, 201,  28,  74,  42, 209,
    43, 249,  92, 126,   9, 155, 173,  30,
@@ -275,11 +273,11 @@ MXE x25519 pubkey is Uint8Array(32) [
     0, 207,  75, 162, 241, 111, 122,   9
 ]
 Using existing proposal system from first test...
-Proposal 0 submitted with signature 93fFR2ySFYnhreEDsvbCnMeaEnaYzmAfPZvbRyqsgNqFpwfQB8y8YUopWgRPxK7g7vcC2ytvTtZLWoqFijpTi8v
+Proposal 0 submitted with signature 4eAnq8fUYYsGZADvq3qu4jsZJkkATR3wP8jX6ejgJWe41nB5JHT4iNFxAU1yiJ4eGmMpg67dzzUo5pR66HM5kjU3
 Proposal 0 submitted by 2uzU1MU3S3T3yd7Yu4avvQ5qNcJ6ZTujF8vv4UmJFQpm
-Proposal 1 submitted with signature 2VJNpvDXj5uuFmndpnNSqo8Ei5ziA1FLY1JFK1kpHBcFeCShKQChd1zguFPHVGXwT5djMVdzecYGuF7Lm2LEUeoz
+Proposal 1 submitted with signature QYTVNXCdN8JPxbUNV6ydn3PnRNninFPmiEZgBaB74NZK24GbfYD9Ucfbm6DfZkax7ivxm3Rao12bWk3PQRDZpko
 Proposal 1 submitted by 2uzU1MU3S3T3yd7Yu4avvQ5qNcJ6ZTujF8vv4UmJFQpm
-Proposal 2 submitted with signature 5scFr7kMjqDfkK97YJffQAEHbmPqubsuLHs625iKYc2LkhMg2WA1Sf355tdfoXGGq4acXqmn7M3nrk4QCyS5i2h9
+Proposal 2 submitted with signature 2r2ftzyh8icQQFswmFiuMooHBFLt88J7gqCj8yZwqhgtngPzRcNJnz99VFn4i8P83WAMNTSwrRAwoz1T67j5nDkB
 Proposal 2 submitted by 2uzU1MU3S3T3yd7Yu4avvQ5qNcJ6ZTujF8vv4UmJFQpm
 
 ========== Creating 3 Voters ==========
@@ -287,6 +285,6 @@ Airdropping SOL to voters...
 ✅ Airdrop complete for all voters
 
 === Voter 1 voting for proposal 0 ===
-✅ Voter 1 queued vote, sig:  3s7DNLvYGUrdUBhJaHNn6N4xVctiiTAuY4jELv9QpT6otXr8tJygoe66bi5xdqerYi8XCkKm7vcKdvjFWLC1TCQF
-✅ Voter 1 receipt created at timestamp  1760969376
+✅ Voter 1 queued vote, sig:  4WsrcrePbYJyZRjP3gLeCHEZAokC3ep8uVQhiDsp8J3USXkxnMNJsNX6oLrtkF7vc6WA5U169FEhkdxfNzyDz7yQ
+✅ Voter 1 receipt created at timestamp  1760970500
 Waiting for computation to finalize...
