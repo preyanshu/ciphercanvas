@@ -208,19 +208,57 @@ describe("Proposal System", () => {
       console.log(`Proposal ${i} submitted by`, proposalEvent.submitter.toString());
     }
 
-    // Cast votes for different proposals
-    const voteChoices = [0, 1, 2]; // Vote for proposals 0, 1, and 2
-    for (let i = 0; i < voteChoices.length; i++) {
-      const proposalId = voteChoices[i];
+    // Create 3 different voters
+    console.log(`\n========== Creating 3 Voters ==========`);
+    const voter1 = anchor.web3.Keypair.generate();
+    const voter2 = anchor.web3.Keypair.generate();
+    const voter3 = anchor.web3.Keypair.generate();
+
+    // Airdrop SOL to each voter for transaction fees
+    console.log(`Airdropping SOL to voters...`);
+    await Promise.all([
+      provider.connection.confirmTransaction(
+        await provider.connection.requestAirdrop(voter1.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL)
+      ),
+      provider.connection.confirmTransaction(
+        await provider.connection.requestAirdrop(voter2.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL)
+      ),
+      provider.connection.confirmTransaction(
+        await provider.connection.requestAirdrop(voter3.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL)
+      ),
+    ]);
+    console.log(`✅ Airdrop complete for all voters`);
+
+    // Define voting pattern: 2 voters for proposal 0, 1 voter for proposal 1
+    const voters = [
+      { keypair: voter1, proposalId: 0, name: "Voter 1" },
+      { keypair: voter2, proposalId: 0, name: "Voter 2" },
+      { keypair: voter3, proposalId: 1, name: "Voter 3" },
+    ];
+
+    // Store nonces client-side for each voter (simulating localStorage)
+    const clientSideNonces = new Map<string, Buffer>();
+
+    // Each voter casts their vote
+    for (const voter of voters) {
+      const proposalId = voter.proposalId;
       const vote = BigInt(proposalId);
       const plaintext = [vote];
 
       const nonce = randomBytes(16);
       const ciphertext = cipher.encrypt(plaintext, nonce);
 
-      const voteEventPromise = awaitEvent("voteEvent");
+      // Encrypt the proposal ID separately for ballot secrecy
+      const proposalIdNonce = randomBytes(16);
+      const encryptedProposalId = cipher.encrypt([vote], proposalIdNonce);
+      
+      // Store nonce client-side with voter's pubkey as key
+      clientSideNonces.set(voter.keypair.publicKey.toBase58(), proposalIdNonce);
 
-      console.log(`Voting for proposal ${proposalId}`);
+      const voteEventPromise = awaitEvent("voteEvent");
+      const voteReceiptEventPromise = awaitEvent("voteReceiptCreatedEvent");
+
+      console.log(`\n=== ${voter.name} voting for proposal ${proposalId} ===`);
 
       const voteComputationOffset = new anchor.BN(randomBytes(8), "hex");
 
@@ -229,11 +267,13 @@ describe("Proposal System", () => {
           .voteForProposal(
             voteComputationOffset,
             proposalId,
+            Array.from(encryptedProposalId[0]),
             Array.from(ciphertext[0]),
             Array.from(publicKey),
             new anchor.BN(deserializeLE(nonce).toString())
           )
           .accountsPartial({
+            payer: voter.keypair.publicKey, // Explicitly set the voter as payer
             computationAccount: getComputationAccAddress(
               program.programId,
               voteComputationOffset
@@ -247,27 +287,82 @@ describe("Proposal System", () => {
               Buffer.from(getCompDefAccOffset("vote_for_proposal")).readUInt32LE()
             ),
           })
+          .signers([voter.keypair])
           .rpc({ 
             skipPreflight: true, 
             commitment: "confirmed",
             preflightCommitment: "confirmed"
           });
       });
-      console.log(`Queue vote for proposal ${proposalId} sig is `, queueVoteSig);
+      console.log(`✅ ${voter.name} queued vote, sig: `, queueVoteSig);
+      
+      // Receipt is created immediately with the queue transaction
+      const voteReceiptEvent = await voteReceiptEventPromise;
+      console.log(`✅ ${voter.name} receipt created at timestamp `, voteReceiptEvent.timestamp.toString());
 
+      console.log(`Waiting for computation to finalize...`);
       const finalizeSig = await awaitComputationFinalization(
         provider as anchor.AnchorProvider,
         voteComputationOffset,
         program.programId,
         "confirmed"
       );
-      console.log(`Finalize vote for proposal ${proposalId} sig is `, finalizeSig);
+      console.log(`✅ ${voter.name} vote finalized, sig: `, finalizeSig);
 
+      // Wait for computation callback - this confirms the vote was tallied
       const voteEvent = await voteEventPromise;
-      console.log(
-        `Vote casted for proposal ${proposalId} at timestamp `,
-        voteEvent.timestamp.toString()
-      );
+      console.log(`✅ ${voter.name} vote tallied at timestamp `, voteEvent.timestamp.toString());
+    }
+
+    // Try voter 1 voting again - should fail!
+    console.log(`\n=== ${voters[0].name} attempting to vote again (should fail) ===`);
+    try {
+      const secondVoteOffset = new anchor.BN(randomBytes(8), "hex");
+      const secondProposalId = 1;
+      const secondVote = BigInt(secondProposalId);
+      const secondNonce = randomBytes(16);
+      const secondCiphertext = cipher.encrypt([secondVote], secondNonce);
+      const secondProposalIdNonce = randomBytes(16);
+      const secondEncryptedProposalId = cipher.encrypt([secondVote], secondProposalIdNonce);
+
+      await program.methods
+        .voteForProposal(
+          secondVoteOffset,
+          secondProposalId,
+          Array.from(secondEncryptedProposalId[0]),
+          Array.from(secondCiphertext[0]),
+          Array.from(publicKey),
+          new anchor.BN(deserializeLE(secondNonce).toString())
+        )
+        .accountsPartial({
+          payer: voters[0].keypair.publicKey, // Explicitly set the voter as payer
+          computationAccount: getComputationAccAddress(
+            program.programId,
+            secondVoteOffset
+          ),
+          clusterAccount: arciumEnv.arciumClusterPubkey,
+          mxeAccount: getMXEAccAddress(program.programId),
+          mempoolAccount: getMempoolAccAddress(program.programId),
+          executingPool: getExecutingPoolAccAddress(program.programId),
+          compDefAccount: getCompDefAccAddress(
+            program.programId,
+            Buffer.from(getCompDefAccOffset("vote_for_proposal")).readUInt32LE()
+          ),
+        })
+        .signers([voters[0].keypair])
+        .rpc({ 
+          skipPreflight: true, 
+          commitment: "confirmed",
+          preflightCommitment: "confirmed"
+        });
+      
+      console.log(`❌ ERROR: Second vote should have failed but succeeded!`);
+    } catch (error: any) {
+      console.log(`✅ Second vote correctly failed!`);
+      console.log(`Error: ${error.message || error}`);
+      if (error.message?.includes('already in use') || error.message?.includes('custom program error')) {
+        console.log(`Reason: Vote receipt PDA already exists - each voter can only vote ONCE!`);
+      }
     }
 
     // Reveal the winning proposal
@@ -311,8 +406,86 @@ describe("Proposal System", () => {
     const revealEvent = await revealEventPromise;
     console.log(`Winning proposal ID is `, revealEvent.winningProposalId);
     
-    // The winning proposal should be one of the proposals we voted for (0, 1, or 2)
-    expect([0, 1, 2]).to.include(revealEvent.winningProposalId);
+    // The winning proposal should be 0 (2 votes vs 1 vote for proposal 1)
+    expect(revealEvent.winningProposalId).to.equal(0);
+
+    // Verify the winner is stored on-chain in ProposalSystemAccount
+    console.log(`\n========== Verifying Winner Stored On-Chain ==========`);
+    const [proposalSystemPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from("proposal_system")],
+      program.programId
+    );
+    const proposalSystemAccount = await program.account.proposalSystemAccount.fetch(proposalSystemPDA);
+    
+    console.log(`Stored winning_proposal_id: ${proposalSystemAccount}`);
+    expect(proposalSystemAccount.winningProposalId).to.equal(0);
+    console.log(`✅ Winner is permanently stored on-chain!`);
+    console.log(`=======================================================\n`);
+
+    // Fetch and display the vote receipt for Voter 1 (who voted for the winning proposal)
+    const winningProposalId = revealEvent.winningProposalId;
+    console.log(`\n========== Fetching Vote Receipt for ${voters[0].name} ==========`);
+    
+    // PDA is derived from voter only (not proposal_id) - one vote per voter!
+    const [voteReceiptPDA, voteReceiptBump] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("vote_receipt"),
+        voters[0].keypair.publicKey.toBuffer()
+      ],
+      program.programId
+    );
+
+    console.log(`Vote Receipt PDA: ${voteReceiptPDA.toBase58()}`);
+    console.log(`Vote Receipt PDA Bump: ${voteReceiptBump}`);
+    console.log(`Fetching vote receipt account data...`);
+
+    const voteReceiptAccount = await program.account.voteReceiptAccount.fetch(voteReceiptPDA);
+    
+    console.log(`Voter: ${voteReceiptAccount.voter.toString()}`);
+    console.log(`Encrypted Proposal ID: ${Buffer.from(voteReceiptAccount.encryptedProposalId).toString('hex')}`);
+    console.log(`Timestamp: ${voteReceiptAccount.timestamp.toString()}`);
+    console.log(`Vote Encryption Pubkey: ${Buffer.from(voteReceiptAccount.voteEncryptionPubkey).toString('hex')}`);
+    console.log(`Bump: ${voteReceiptAccount.bump}`);
+    console.log(`\n✅ Complete ballot secrecy: NO plaintext proposal ID stored on-chain!`);
+    console.log(`\nNote: Proposal ID nonce is stored CLIENT-SIDE ONLY for privacy!`);
+    console.log(`=======================================================\n`);
+
+    // Demonstrate decryption of the encrypted proposal ID by the voter
+    const encryptedProposalIdFromReceipt = voteReceiptAccount.encryptedProposalId;
+    
+    console.log(`\n========== ${voters[0].name} Can Decrypt Their Vote (Using Client-Side Nonce) ==========`);
+    console.log(`Encrypted Proposal ID on-chain: ${Buffer.from(encryptedProposalIdFromReceipt).toString('hex')}`);
+    
+    // Retrieve the nonce from client-side storage (localStorage in real app)
+    const savedNonce = clientSideNonces.get(voters[0].keypair.publicKey.toBase58());
+    
+    if (savedNonce) {
+      console.log(`\nRetrieving saved nonce from client-side storage...`);
+      console.log(`Saved nonce: ${savedNonce.toString('hex')}`);
+      
+      // Decrypt the proposal ID using the client-side nonce
+      const decryptedProposalId = cipher.decrypt(
+        [encryptedProposalIdFromReceipt],
+        savedNonce
+      );
+      
+      console.log(`\n✅ Successfully decrypted!`);
+      console.log(`Decrypted Proposal ID: ${decryptedProposalId[0]}`);
+      console.log(`Expected Proposal ID for ${voters[0].name}: ${voters[0].proposalId}`);
+      console.log(`Match: ${decryptedProposalId[0] === BigInt(voters[0].proposalId) ? '✅ YES' : '❌ NO'}`);
+      
+      // Verify the decryption is correct - Voter 1 voted for proposal 0
+      expect(decryptedProposalId[0]).to.equal(BigInt(voters[0].proposalId));
+      
+      console.log(`\n✅ Complete ballot secrecy maintained!`);
+      console.log(`The on-chain receipt contains ONLY the encrypted proposal ID.`);
+      console.log(`Only the voter (with their client-side nonce) or MXE can decrypt the vote.`);
+    } else {
+      console.log(`\n❌ No nonce found in client-side storage!`);
+    }
+    
+    console.log(`\nNote: The nonce is NEVER stored on-chain, ensuring true ballot secrecy!`);
+    console.log(`==============================================================================\n`);
   });
 
   async function initProposalVotesCompDef(

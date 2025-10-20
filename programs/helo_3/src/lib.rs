@@ -38,6 +38,7 @@ pub mod proposal_system {
         ctx.accounts.system_acc.nonce = nonce;
         ctx.accounts.system_acc.proposal_votes = [[0; 32]; 10]; // 10 proposals max
         ctx.accounts.system_acc.next_proposal_id = 0;
+        ctx.accounts.system_acc.winning_proposal_id = None; // No winner yet
 
         let args = vec![Argument::PlaintextU128(nonce)];
 
@@ -123,9 +124,12 @@ pub mod proposal_system {
     /// This function allows a voter to cast their vote for a specific proposal in encrypted form.
     /// The vote is added to the running tally through MPC computation, ensuring
     /// that individual votes remain confidential while updating the overall count.
+    /// A receipt account is created for the voter storing their vote details with encrypted proposal ID.
+    /// Note: The proposal_id_nonce is kept client-side only for privacy.
     ///
     /// # Arguments
-    /// * `proposal_id` - ID of the proposal being voted for
+    /// * `proposal_id` - ID of the proposal being voted for (plaintext for validation)
+    /// * `encrypted_proposal_id` - Encrypted proposal ID for ballot secrecy (nonce kept client-side)
     /// * `vote` - Encrypted vote containing the proposal ID
     /// * `vote_encryption_pubkey` - Voter's public key for encryption
     /// * `vote_nonce` - Cryptographic nonce for the vote encryption
@@ -133,6 +137,7 @@ pub mod proposal_system {
         ctx: Context<VoteForProposal>,
         computation_offset: u64,
         proposal_id: u8,
+        encrypted_proposal_id: [u8; 32],
         vote: [u8; 32],
         vote_encryption_pubkey: [u8; 32],
         vote_nonce: u128,
@@ -141,6 +146,25 @@ pub mod proposal_system {
             proposal_id < ctx.accounts.system_acc.next_proposal_id,
             ErrorCode::InvalidProposalId
         );
+
+        // Get current timestamp for the vote receipt
+        let clock = Clock::get()?;
+        let current_timestamp = clock.unix_timestamp;
+
+        // Initialize the vote receipt for this voter
+        ctx.accounts.vote_receipt.bump = ctx.bumps.vote_receipt;
+        ctx.accounts.vote_receipt.voter = ctx.accounts.payer.key();
+        ctx.accounts.vote_receipt.encrypted_proposal_id = encrypted_proposal_id;
+        ctx.accounts.vote_receipt.vote_encryption_pubkey = vote_encryption_pubkey;
+        ctx.accounts.vote_receipt.timestamp = current_timestamp;
+
+        // Emit event for vote receipt creation
+        emit!(VoteReceiptCreatedEvent {
+            voter: ctx.accounts.payer.key(),
+            proposal_id,
+            encrypted_proposal_id,
+            timestamp: current_timestamp,
+        });
 
         let args = vec![
             Argument::ArcisPubkey(vote_encryption_pubkey),
@@ -162,13 +186,15 @@ pub mod proposal_system {
             computation_offset,
             args,
             None,
-            vec![VoteForProposalCallback::callback_ix(&[CallbackAccount {
-                pubkey: ctx.accounts.system_acc.key(),
-                is_writable: true,
-            }])],
+            vec![VoteForProposalCallback::callback_ix(&[
+                CallbackAccount {
+                    pubkey: ctx.accounts.system_acc.key(),
+                    is_writable: true,
+                },
+            ])],
         )?;
         Ok(())
-    }
+    } 
 
     #[arcium_callback(encrypted_ix = "vote_for_proposal")]
     pub fn vote_for_proposal_callback(
@@ -234,7 +260,10 @@ pub mod proposal_system {
             computation_offset,
             args,
             None,
-            vec![RevealWinningProposalCallback::callback_ix(&[])],
+            vec![RevealWinningProposalCallback::callback_ix(&[CallbackAccount {
+                pubkey: ctx.accounts.system_acc.key(),
+                is_writable: true,
+            }])],
         )?;
         Ok(())
     }
@@ -248,6 +277,9 @@ pub mod proposal_system {
             ComputationOutputs::Success(RevealWinningProposalOutput { field_0 }) => field_0,
             _ => return Err(ErrorCode::AbortedComputation.into()),
         };
+
+        // Store the winning proposal ID on-chain
+        ctx.accounts.system_acc.winning_proposal_id = Some(o);
 
         emit!(WinningProposalEvent { winning_proposal_id: o });
 
@@ -440,6 +472,14 @@ pub struct VoteForProposal<'info> {
         bump = system_acc.bump
     )]
     pub system_acc: Account<'info, ProposalSystemAccount>,
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + VoteReceiptAccount::INIT_SPACE,
+        seeds = [b"vote_receipt", payer.key().as_ref()],
+        bump,
+    )]
+    pub vote_receipt: Account<'info, VoteReceiptAccount>,
 }
 
 #[callback_accounts("vote_for_proposal")]
@@ -550,6 +590,8 @@ pub struct RevealWinningProposalCallback<'info> {
     #[account(address = ::anchor_lang::solana_program::sysvar::instructions::ID)]
     /// CHECK: instructions_sysvar, checked by the account constraint
     pub instructions_sysvar: AccountInfo<'info>,
+    #[account(mut)]
+    pub system_acc: Account<'info, ProposalSystemAccount>,
 }
 
 #[init_computation_definition_accounts("reveal_winning_proposal", payer)]
@@ -584,6 +626,8 @@ pub struct ProposalSystemAccount {
     pub next_proposal_id: u8,
     /// Encrypted vote counters for all proposals (up to 10) as 32-byte ciphertexts
     pub proposal_votes: [[u8; 32]; 10],
+    /// Winning proposal ID after reveal (None = not revealed yet)
+    pub winning_proposal_id: Option<u8>,
 }
 
 /// Represents a single proposal submitted to the system.
@@ -606,6 +650,26 @@ pub struct ProposalAccount {
     pub description: String,
 }
 
+/// Represents a vote receipt for a voter.
+/// This account stores the details of a vote cast by a specific voter.
+/// The proposal ID is encrypted for ballot secrecy - only the voter (who has the nonce) or MXE can decrypt it.
+/// Note: PDA is derived from voter only - each voter can only vote ONCE total (not once per proposal).
+/// The plaintext proposal_id is NOT stored to maintain complete ballot secrecy.
+#[account]
+#[derive(InitSpace)]
+pub struct VoteReceiptAccount {
+    /// PDA bump seed
+    pub bump: u8,
+    /// Public key of the voter
+    pub voter: Pubkey,
+    /// Encrypted proposal ID - only decryptable by voter (with their nonce) or MXE
+    pub encrypted_proposal_id: [u8; 32],
+    /// Timestamp when the vote was cast
+    pub timestamp: i64,
+    /// Voter's encryption public key used for the vote
+    pub vote_encryption_pubkey: [u8; 32],
+}
+
 #[error_code]
 pub enum ErrorCode {
     #[msg("Invalid authority")]
@@ -618,6 +682,8 @@ pub enum ErrorCode {
     MaxProposalsReached,
     #[msg("Invalid proposal ID")]
     InvalidProposalId,
+    #[msg("Voter has already voted - only one vote per voter allowed")]
+    AlreadyVoted,
 }
 
 #[event]
@@ -634,4 +700,12 @@ pub struct ProposalSubmittedEvent {
 #[event]
 pub struct WinningProposalEvent {
     pub winning_proposal_id: u8,
+}
+
+#[event]
+pub struct VoteReceiptCreatedEvent {
+    pub voter: Pubkey,
+    pub proposal_id: u8,
+    pub encrypted_proposal_id: [u8; 32],
+    pub timestamp: i64,
 }

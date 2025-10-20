@@ -1,0 +1,292 @@
+Checking if encrypted instructions are up to date.
+Encrypted instructions are up to date. Skipping build.
+WARNING: `anchor-lang` version(0.31.1) and the current CLI version(0.32.1) don't match.
+
+	This can lead to unwanted behavior. To use the same CLI version, add:
+
+	[toolchain]
+	anchor_version = "0.31.1"
+
+	to Anchor.toml
+
+WARNING: `@coral-xyz/anchor` version(^0.31.1) and the current CLI version(0.32.1) don't match.
+
+	This can lead to unwanted behavior. To fix, upgrade the package by running:
+
+	yarn upgrade @coral-xyz/anchor@0.32.1
+
+warn: both `/home/preyanshu/helo_3/rust-toolchain` and `/home/preyanshu/helo_3/rust-toolchain.toml` exist. Using `/home/preyanshu/helo_3/rust-toolchain`
+Error: Function _ZN109_$LT$arcium_client..idl..arcium..utils..Account$u20$as$u20$core..convert..TryFrom$LT$$RF$$u5b$u8$u5d$$GT$$GT$8try_from17hff1489fac46a244dE Stack offset of 721512 exceeded max offset of 4096 by 717416 bytes, please minimize large stack variables. Estimated function frame size: 721536 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+warning: unexpected `cfg` condition value: `custom-heap`
+  --> programs/helo_3/src/lib.rs:11:1
+   |
+11 | #[arcium_program]
+   | ^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+   = help: consider adding `custom-heap` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: `#[warn(unexpected_cfgs)]` on by default
+   = note: this warning originates in the macro `$crate::custom_heap_default` which comes from the expansion of the attribute macro `program` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `custom-panic`
+  --> programs/helo_3/src/lib.rs:11:1
+   |
+11 | #[arcium_program]
+   | ^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+   = help: consider adding `custom-panic` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the macro `$crate::custom_panic_default` which comes from the expansion of the attribute macro `program` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+  --> programs/helo_3/src/lib.rs:11:1
+   |
+11 | #[arcium_program]
+   | ^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+   = help: consider adding `anchor-debug` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the attribute macro `program` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+  --> programs/helo_3/src/lib.rs:11:1
+   |
+11 | #[arcium_program]
+   | ^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+   = help: consider adding `anchor-debug` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> programs/helo_3/src/lib.rs:306:10
+    |
+306 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = help: consider adding `anchor-debug` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> programs/helo_3/src/lib.rs:373:10
+    |
+373 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = help: consider adding `anchor-debug` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> programs/helo_3/src/lib.rs:389:10
+    |
+389 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = help: consider adding `anchor-debug` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> programs/helo_3/src/lib.rs:406:10
+    |
+406 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = help: consider adding `anchor-debug` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> programs/helo_3/src/lib.rs:428:10
+    |
+428 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = help: consider adding `anchor-debug` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> programs/helo_3/src/lib.rs:501:10
+    |
+501 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = help: consider adding `anchor-debug` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> programs/helo_3/src/lib.rs:516:10
+    |
+516 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = help: consider adding `anchor-debug` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> programs/helo_3/src/lib.rs:534:10
+    |
+534 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = help: consider adding `anchor-debug` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> programs/helo_3/src/lib.rs:598:10
+    |
+598 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = help: consider adding `anchor-debug` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> programs/helo_3/src/lib.rs:613:10
+    |
+613 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = help: consider adding `anchor-debug` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: use of deprecated method `anchor_lang::prelude::AccountInfo::<'a>::realloc`: Use AccountInfo::resize() instead
+  --> programs/helo_3/src/lib.rs:11:1
+   |
+11 | #[arcium_program]
+   | ^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+   = note: this warning originates in the attribute macro `program` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+Error: Function _ZN101_$LT$helo_3..VoteForProposal$u20$as$u20$anchor_lang..Accounts$LT$helo_3..VoteForProposalBumps$GT$$GT$12try_accounts17h516bc2479c36a4c4E Stack offset of 4104 exceeded max offset of 4096 by 8 bytes, please minimize large stack variables. Estimated function frame size: 4160 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+warning: `helo_3` (lib) generated 20 warnings (5 duplicates)
+    Finished `release` profile [optimized] target(s) in 0.33s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running unittests src/lib.rs (/home/preyanshu/helo_3/target/debug/deps/helo_3-1d44b40076a2c7ef)
+Removed artifacts/operator_acc_CxpN_bErP.json
+Removed artifacts/arx_ata_2uzU_FQpm.json
+Removed artifacts/arx_node_CxpN_bErP.json
+Removed artifacts/arx_node_93gA_KhHc.json
+Removed artifacts/init_proposal_votes_raw_circuit_0.json
+Removed artifacts/wallet_acc_callback_EFg9_hbr9.json
+Removed artifacts/mempool_acc.json
+Removed artifacts/wallet_acc_2uzU_FQpm.json
+Removed artifacts/arx_mint.json
+Removed artifacts/wallet_acc_93gA_KhHc.json
+Removed artifacts/mxe_acc.json
+Removed artifacts/reveal_winning_proposal_raw_circuit_0.json
+Removed artifacts/arcium_fee_pool.json
+Removed artifacts/executing_pool_acc.json
+Removed artifacts/operator_acc_93gA_KhHc.json
+Removed artifacts/mxe_keygen_comp_def.json
+Removed artifacts/wallet_acc_callback_HpzS_pBir.json
+Removed artifacts/arx_ata_93gA_KhHc.json
+Removed artifacts/arx_ata_CxpN_bErP.json
+Removed artifacts/arcium_clock.json
+Removed artifacts/cluster_acc_0.json
+Removed artifacts/vote_for_proposal_raw_circuit_0.json
+Removed artifacts/mxe_keygen_comp.json
+Removed artifacts/wallet_acc_CxpN_bErP.json
+Clean completed successfully!
+Generating accounts with owner pubkey: 2uzU1MU3S3T3yd7Yu4avvQ5qNcJ6ZTujF8vv4UmJFQpm
+Creating genesis accounts...
+Starting anchor localnet...
+Waiting for solana localnet to come online at http://127.0.0.1:8899...
+Solana localnet is online ✔️
+Starting Arcium node(s)...
+Waiting for the arcium nodes to come online...
+Arcium nodes are online ✔️
+Solana localnet & Arx nodes are online! 🎉
+
+Found a 'test' script in the Anchor.toml. Running it as a test suite!
+
+Running test suite: "/home/preyanshu/helo_3/Anchor.toml"
+
+yarn run v1.22.22
+$ /home/preyanshu/helo_3/node_modules/.bin/ts-mocha -p ./tsconfig.json -t 1000000 'tests/**/*.ts'
+(node:38516) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/preyanshu/helo_3/tests/helo_3.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /home/preyanshu/helo_3/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+  Proposal System
+Waiting for cluster to be fully ready...
+MXE x25519 pubkey is Uint8Array(32) [
+   90,  50, 173, 201,  28,  74,  42, 209,
+   43, 249,  92, 126,   9, 155, 173,  30,
+  164,  50, 243, 102,   1, 153, 220, 202,
+    0, 207,  75, 162, 241, 111, 122,   9
+]
+Initializing proposal votes computation definition
+Init proposal votes computation definition pda is  CfQDyafunZMFeGKmZg5jVkbmQXuwkj6WWbp3oL7paPPp
+Init proposal votes computation definition transaction 3Q4hz4WW1enjA2uMZdG8C4cFU8ehA8bv613iJZnb2LSTrZ7yb8uJRWneW2ypji8bLY19PJzAe9VRfSu7633WodbC
+Proposal votes computation definition initialized with signature 3Q4hz4WW1enjA2uMZdG8C4cFU8ehA8bv613iJZnb2LSTrZ7yb8uJRWneW2ypji8bLY19PJzAe9VRfSu7633WodbC
+Initializing vote for proposal computation definition
+Vote for proposal computation definition pda is  2774m2dnD7iJsdaJf2mi83f7LDmWS8KnaW9qj2D97CDy
+Attempt 1 failed with blockhash error, retrying in 1000ms...
+Vote for proposal computation definition pda is  2774m2dnD7iJsdaJf2mi83f7LDmWS8KnaW9qj2D97CDy
+Init vote for proposal computation definition transaction 5C7tEyZoUevFkQrtJ7D64jpWFZrg6MdzykT2JjX6hi49ecT1yBFS5kwcnYGtBDXB6wAKV83CkFsMtkhRfMi7Qa8z
+Vote for proposal computation definition initialized with signature 5C7tEyZoUevFkQrtJ7D64jpWFZrg6MdzykT2JjX6hi49ecT1yBFS5kwcnYGtBDXB6wAKV83CkFsMtkhRfMi7Qa8z
+Initializing reveal winning proposal computation definition
+Reveal winning proposal computation definition pda is  Cw7kjZo2NP1qoi6UuEfPFtCaFiqzoN83MyYouove9meJ
+Attempt 1 failed with blockhash error, retrying in 1000ms...
+Reveal winning proposal computation definition pda is  Cw7kjZo2NP1qoi6UuEfPFtCaFiqzoN83MyYouove9meJ
+Init reveal winning proposal computation definition transaction 34uqXVPSaAC9jXncqCpJx12qhR5m8qYiZgjaenNTsY7SY7BgRKh18vmEVYjjZ6KCXJ2L64vwnuk4K4ezXbzYz2Dv
+Reveal winning proposal computation definition initialized with signature 34uqXVPSaAC9jXncqCpJx12qhR5m8qYiZgjaenNTsY7SY7BgRKh18vmEVYjjZ6KCXJ2L64vwnuk4K4ezXbzYz2Dv
+MXE x25519 pubkey is Uint8Array(32) [
+   90,  50, 173, 201,  28,  74,  42, 209,
+   43, 249,  92, 126,   9, 155, 173,  30,
+  164,  50, 243, 102,   1, 153, 220, 202,
+    0, 207,  75, 162, 241, 111, 122,   9
+]
+Attempting to initialize proposal system...
+Proposal system initialized with signature 41MopWC7oznEf82iCXxSmeWW5TFndwVZMFA8pxBB3dKLCjNHgJrKAXox3EuQKj6o8cqUv5tHzbta3wi9gSj4KMhf
+    ✔ can initialize the proposal system (411ms)
+MXE x25519 pubkey is Uint8Array(32) [
+   90,  50, 173, 201,  28,  74,  42, 209,
+   43, 249,  92, 126,   9, 155, 173,  30,
+  164,  50, 243, 102,   1, 153, 220, 202,
+    0, 207,  75, 162, 241, 111, 122,   9
+]
+Using existing proposal system from first test...
+Proposal 0 submitted with signature 93fFR2ySFYnhreEDsvbCnMeaEnaYzmAfPZvbRyqsgNqFpwfQB8y8YUopWgRPxK7g7vcC2ytvTtZLWoqFijpTi8v
+Proposal 0 submitted by 2uzU1MU3S3T3yd7Yu4avvQ5qNcJ6ZTujF8vv4UmJFQpm
+Proposal 1 submitted with signature 2VJNpvDXj5uuFmndpnNSqo8Ei5ziA1FLY1JFK1kpHBcFeCShKQChd1zguFPHVGXwT5djMVdzecYGuF7Lm2LEUeoz
+Proposal 1 submitted by 2uzU1MU3S3T3yd7Yu4avvQ5qNcJ6ZTujF8vv4UmJFQpm
+Proposal 2 submitted with signature 5scFr7kMjqDfkK97YJffQAEHbmPqubsuLHs625iKYc2LkhMg2WA1Sf355tdfoXGGq4acXqmn7M3nrk4QCyS5i2h9
+Proposal 2 submitted by 2uzU1MU3S3T3yd7Yu4avvQ5qNcJ6ZTujF8vv4UmJFQpm
+
+========== Creating 3 Voters ==========
+Airdropping SOL to voters...
+✅ Airdrop complete for all voters
+
+=== Voter 1 voting for proposal 0 ===
+✅ Voter 1 queued vote, sig:  3s7DNLvYGUrdUBhJaHNn6N4xVctiiTAuY4jELv9QpT6otXr8tJygoe66bi5xdqerYi8XCkKm7vcKdvjFWLC1TCQF
+✅ Voter 1 receipt created at timestamp  1760969376
+Waiting for computation to finalize...
