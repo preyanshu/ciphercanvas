@@ -40,6 +40,7 @@ pub mod proposal_system {
         ctx.accounts.system_acc.proposal_votes = [[0; 32]; 10]; // 10 proposals max
         ctx.accounts.system_acc.next_proposal_id = 0;
         ctx.accounts.system_acc.winning_proposal_id = None; // No winner yet
+        ctx.accounts.system_acc.winning_vote_count = None; // No vote count yet
 
         // Initialize the round metadata account (separate from system_acc to avoid MXE issues)
         ctx.accounts.round_metadata.bump = ctx.bumps.round_metadata;
@@ -369,13 +370,17 @@ pub mod proposal_system {
         ctx: Context<RevealWinningProposalCallback>,
         output: ComputationOutputs<RevealWinningProposalOutput>,
     ) -> Result<()> {
-        let winning_proposal_id = match output {
+        let result = match output {
             ComputationOutputs::Success(RevealWinningProposalOutput { field_0 }) => field_0,
             _ => return Err(ErrorCode::AbortedComputation.into()),
         };
+        
+        let winning_proposal_id = result.field_0;
+        let winning_vote_count = result.field_1;
 
-        // Store the winning proposal ID on-chain in the system account
+        // Store the winning proposal ID and vote count on-chain in the system account
         ctx.accounts.system_acc.winning_proposal_id = Some(winning_proposal_id);
+        ctx.accounts.system_acc.winning_vote_count = Some(winning_vote_count);
 
         // Get current round before incrementing
         let current_round_id = ctx.accounts.round_metadata.current_round;
@@ -386,13 +391,15 @@ pub mod proposal_system {
         ctx.accounts.round_metadata.current_round += 1;
 
         msg!(
-            "Round {} completed - Winner: Proposal {}", 
+            "Round {} completed - Winner: Proposal {} with {} votes", 
             current_round_id, 
-            winning_proposal_id
+            winning_proposal_id,
+            winning_vote_count
         );
 
         emit!(WinningProposalEvent { 
             winning_proposal_id,
+            winning_vote_count,
             round_id: current_round_id,
         });
 
@@ -806,6 +813,8 @@ pub struct ProposalSystemAccount {
     pub proposal_votes: [[u8; 32]; 10],
     /// Winning proposal ID after reveal (None = not revealed yet)
     pub winning_proposal_id: Option<u8>,
+    /// Number of votes the winning proposal received (None = not revealed yet)
+    pub winning_vote_count: Option<u64>,
 }
 
 /// Represents a single proposal submitted to the system.
@@ -913,6 +922,7 @@ pub struct ProposalSubmittedEvent {
 #[event]
 pub struct WinningProposalEvent {
     pub winning_proposal_id: u8,
+    pub winning_vote_count: u64,
     pub round_id: u64,
 }
 

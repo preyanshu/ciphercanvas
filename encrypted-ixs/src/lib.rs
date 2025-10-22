@@ -59,15 +59,15 @@ mod circuits {
     /// Reveals the winning proposal by finding the one with maximum votes.
     ///
     /// Decrypts the vote counters and determines which proposal has the most votes.
-    /// Only the winning proposal ID is revealed, not the actual vote counts.
+    /// Returns both the winning proposal ID and its vote count.
     ///
     /// # Arguments
     /// * `proposal_votes_ctxt` - Encrypted vote tallies for all proposals
     ///
     /// # Returns
-    /// The ID of the proposal with the most votes (0-9)
+    /// A tuple containing (winning_proposal_id, vote_count)
     #[instruction]
-    pub fn reveal_winning_proposal(proposal_votes_ctxt: Enc<Mxe, ProposalVotes>) -> u8 {
+    pub fn reveal_winning_proposal(proposal_votes_ctxt: Enc<Mxe, ProposalVotes>) -> (u8, u64) {
         let proposal_votes = proposal_votes_ctxt.to_arcis();
         
         let mut max_votes = 0u64;
@@ -80,6 +80,6 @@ mod circuits {
             }
         }
         
-        winning_proposal.reveal()
+        (winning_proposal, max_votes).reveal()
     }
 }
