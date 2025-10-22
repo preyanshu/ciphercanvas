@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 use arcium_client::idl::arcium::types::CallbackAccount;
+use anchor_lang::solana_program::rent::Rent;
 
 const COMP_DEF_OFFSET_INIT_PROPOSAL_VOTES: u32 = comp_def_offset("init_proposal_votes");
 const COMP_DEF_OFFSET_VOTE_FOR_PROPOSAL: u32 = comp_def_offset("vote_for_proposal");
@@ -145,7 +146,43 @@ pub mod proposal_system {
         vote: [u8; 32],
         vote_encryption_pubkey: [u8; 32],
         vote_nonce: u128,
+        round_id: u64,
     ) -> Result<()> {
+        msg!("vote_for_proposal called with round_id: {}", round_id);
+        
+        // Manually derive the vote_receipt PDA
+        let round_id_bytes = round_id.to_le_bytes();
+        let (expected_vote_receipt_pda, vote_receipt_bump) = Pubkey::find_program_address(
+            &[b"vote_receipt", ctx.accounts.payer.key().as_ref(), &round_id_bytes],
+            &crate::ID
+        );
+        
+        // Log the PDA, program ID, and payer key
+        msg!("Vote Receipt PDA: {}", expected_vote_receipt_pda);
+
+        msg!("-------------------------------------------------------");
+        msg!("vote_for_proposal called with round_id: {}", round_id);
+        msg!("Program ID: {}", crate::ID);
+        msg!("Payer Key: {}", ctx.accounts.payer.key());
+        msg!("Vote Receipt Bump: {}", vote_receipt_bump);
+
+        msg!("-------------------------------------------------------");
+        
+        // Log the PDA received from the client
+        msg!("PDA received from client: {}", ctx.accounts.vote_receipt.key());
+        
+        // Manually verify the vote_receipt account
+        require!(
+            ctx.accounts.vote_receipt.key() == expected_vote_receipt_pda,
+            ErrorCode::InvalidAuthority
+        );
+        
+        // Check if the account is already initialized
+        require!(
+            ctx.accounts.vote_receipt.data_is_empty(),
+            ErrorCode::AccountAlreadyInitialized
+        );
+        
         // Manually verify and deserialize round_metadata
         let (expected_round_pda, _bump) = Pubkey::find_program_address(&[b"round_metadata"], &crate::ID);
         require!(
@@ -166,12 +203,42 @@ pub mod proposal_system {
         let clock = Clock::get()?;
         let current_timestamp = clock.unix_timestamp;
 
-        // Initialize the vote receipt for this voter
-        ctx.accounts.vote_receipt.bump = ctx.bumps.vote_receipt;
-        ctx.accounts.vote_receipt.voter = ctx.accounts.payer.key();
-        ctx.accounts.vote_receipt.encrypted_proposal_id = encrypted_proposal_id;
-        ctx.accounts.vote_receipt.vote_encryption_pubkey = vote_encryption_pubkey;
-        ctx.accounts.vote_receipt.timestamp = current_timestamp;
+        // Create the vote receipt account using system program
+        let space = 8 + VoteReceiptAccount::INIT_SPACE;
+        let rent = Rent::get()?;
+        let lamports = rent.minimum_balance(space);
+        
+        let create_account_ix = anchor_lang::solana_program::system_instruction::create_account(
+            &ctx.accounts.payer.key(),
+            &expected_vote_receipt_pda,
+            lamports,
+            space as u64,
+            &crate::ID,
+        );
+        
+        anchor_lang::solana_program::program::invoke_signed(
+            &create_account_ix,
+            &[
+                ctx.accounts.payer.to_account_info(),
+                ctx.accounts.vote_receipt.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[&[b"vote_receipt", ctx.accounts.payer.key().as_ref(), &round_id_bytes, &[vote_receipt_bump]]],
+        )?;
+
+        // Manually initialize the vote receipt account
+        let vote_receipt_account = VoteReceiptAccount {
+            bump: vote_receipt_bump,
+            voter: ctx.accounts.payer.key(),
+            encrypted_proposal_id,
+            timestamp: current_timestamp,
+            vote_encryption_pubkey,
+        };
+        
+        // Serialize and write the account data
+        let mut vote_receipt_data = ctx.accounts.vote_receipt.try_borrow_mut_data()?;
+        let serialized = vote_receipt_account.try_to_vec()?;
+        vote_receipt_data[0..serialized.len()].copy_from_slice(&serialized);
 
         // Emit event for vote receipt creation
         emit!(VoteReceiptCreatedEvent {
@@ -445,6 +512,7 @@ pub struct InitProposalVotesCallback<'info> {
     /// CHECK: system_acc, checked by the callback account key passed in queue_computation
     #[account(mut)]
     pub system_acc: Account<'info, ProposalSystemAccount>,
+    
 }
 
 #[init_computation_definition_accounts("init_proposal_votes", payer)]
@@ -549,14 +617,9 @@ pub struct VoteForProposal<'info> {
         bump = system_acc.bump
     )]
     pub system_acc: Account<'info, ProposalSystemAccount>,
-    #[account(
-        init,
-        payer = payer,
-        space = 8 + VoteReceiptAccount::INIT_SPACE,
-        seeds = [b"vote_receipt", payer.key().as_ref()],
-        bump,
-    )]
-    pub vote_receipt: Account<'info, VoteReceiptAccount>,
+    /// CHECK: Manually verified vote_receipt PDA
+    #[account(mut)]
+    pub vote_receipt: UncheckedAccount<'info>,
     /// CHECK: Manually verified round_metadata PDA
     pub round_metadata: UncheckedAccount<'info>,
 }
@@ -824,6 +887,8 @@ pub enum ErrorCode {
     InvalidProposalId,
     #[msg("Voter has already voted - only one vote per voter allowed")]
     AlreadyVoted,
+    #[msg("Account is already initialized")]
+    AccountAlreadyInitialized,
 }
 
 #[event]

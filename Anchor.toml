@@ -31,3 +31,99 @@ program = "/home/preyanshu/helo_3/artifacts/arcium_program_0.3.0.so"
 bind_address = "0.0.0.0"
 ledger = ".anchor/test-ledger"
 rpc_port = 8899
+
+[[test.validator.account]]
+address = "FHriyvoZotYiFnbUzKFjzRSb2NiaC8RPWY7jtKuKhg65"
+filename = "artifacts/arcium_clock.json"
+
+[[test.validator.account]]
+address = "7MGSS4iKNM4sVib7bDZDJhVqB6EcchPwVnTKenCY1jt3"
+filename = "artifacts/arcium_fee_pool.json"
+
+[[test.validator.account]]
+address = "BoVUVSJAhob2cvM5z4JZTdS6VWRSznh3bbzQD1TFjvDP"
+filename = "artifacts/arx_mint.json"
+
+[[test.validator.account]]
+address = "2uzU1MU3S3T3yd7Yu4avvQ5qNcJ6ZTujF8vv4UmJFQpm"
+filename = "artifacts/wallet_acc_2uzU_FQpm.json"
+
+[[test.validator.account]]
+address = "633K2WZKmYkMVjohS9V9qCBVr3v7mRuj4pb8UYL4UANS"
+filename = "artifacts/arx_ata_2uzU_FQpm.json"
+
+[[test.validator.account]]
+address = "DQRwuwcafn8anqAWXkTBJS86jnNgout8ifLUwUCbHvvi"
+filename = "artifacts/wallet_acc_DQRw_Hvvi.json"
+
+[[test.validator.account]]
+address = "63MRUJRX77h5wxr8GsoCftc23DDUmSH6Mg7yCDo3fxPM"
+filename = "artifacts/wallet_acc_callback_63MR_fxPM.json"
+
+[[test.validator.account]]
+address = "972rQD4dYZUvYFfBKy8fSJaT32k6G4BVUaHRhhSUBuEt"
+filename = "artifacts/arx_ata_DQRw_Hvvi.json"
+
+[[test.validator.account]]
+address = "D1NdsjmbzijNPjv2v9wT5TjteXZUiKiekUMBSF9khK1D"
+filename = "artifacts/operator_acc_DQRw_Hvvi.json"
+
+[[test.validator.account]]
+address = "ELoRR19zrps1G3UYKcAxr7LKbw3kbqkVUXVY9dETMWN7"
+filename = "artifacts/arx_node_DQRw_Hvvi.json"
+
+[[test.validator.account]]
+address = "68gKkWtQAkbLgjNCgBSxN3rVUV6TnGhPTjJ2MWSgCnpG"
+filename = "artifacts/wallet_acc_68gK_CnpG.json"
+
+[[test.validator.account]]
+address = "HD3qDVcC3oMbvzp8sQLmsFV3ac2pCZEMWtPvwNt7Rxih"
+filename = "artifacts/wallet_acc_callback_HD3q_Rxih.json"
+
+[[test.validator.account]]
+address = "96qn3nDarLfGMX1jwR2Djs4AFF7PufHRcNyHb7GFwXc9"
+filename = "artifacts/arx_ata_68gK_CnpG.json"
+
+[[test.validator.account]]
+address = "EZGKmTxiwG9YW7QjQSYtxQRpBqGWr46N8yqUV7oKK3KT"
+filename = "artifacts/operator_acc_68gK_CnpG.json"
+
+[[test.validator.account]]
+address = "XdfSwb8ZajhN7CerfBSJVhyfx5fyLtv34QVKSRgMFA9"
+filename = "artifacts/arx_node_68gK_CnpG.json"
+
+[[test.validator.account]]
+address = "GgSqqAyH7AVY3Umcv8NvncrjFaNJuQLmxzxFxPoPW2Yd"
+filename = "artifacts/cluster_acc_0.json"
+
+[[test.validator.account]]
+address = "5Ehpv7eKBELdCHn1Avd4fKTUmy4mFqtTjXBFdQmiurEw"
+filename = "artifacts/reveal_winning_proposal_raw_circuit_0.json"
+
+[[test.validator.account]]
+address = "2bLcjPDyqWTPfrJJxpUBE5Z1R64zooQCP5LozVNAg5Ky"
+filename = "artifacts/vote_for_proposal_raw_circuit_0.json"
+
+[[test.validator.account]]
+address = "6Y4oarYqgvuXSp2mX69RQ7oSbFYUZb3vMgyqZ72tgsSR"
+filename = "artifacts/init_proposal_votes_raw_circuit_0.json"
+
+[[test.validator.account]]
+address = "GHDiu3eHej95nbTNcQ9RcycYK16onSz5mmpVtJVa3RTG"
+filename = "artifacts/mxe_keygen_comp_def.json"
+
+[[test.validator.account]]
+address = "C1ayBd6wKCXPzsCdwSeENda7tKnedsXicvbKUZcVUd9u"
+filename = "artifacts/mxe_keygen_comp.json"
+
+[[test.validator.account]]
+address = "JDbsqMXNqHNmcP2mZZk2DeYRKUrmRa9CEXui2c7wn2qx"
+filename = "artifacts/mxe_acc.json"
+
+[[test.validator.account]]
+address = "2pzz7SX8xcXdbeALZsCx4AD7yAs1iB9jBAGWtGa2676Z"
+filename = "artifacts/mempool_acc.json"
+
+[[test.validator.account]]
+address = "DwmDfSp9tste7A8beq5SE21ZCem8Rhe5Hx6DABbBseuW"
+filename = "artifacts/executing_pool_acc.json"
