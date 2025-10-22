@@ -192,7 +192,13 @@ pub mod proposal_system {
         
         // Deserialize the round_metadata account
         let round_metadata_data = ctx.accounts.round_metadata.try_borrow_data()?;
-        let _round_metadata: RoundMetadataAccount = AnchorDeserialize::deserialize(&mut &round_metadata_data[8..])?;
+        let round_metadata: RoundMetadataAccount = AnchorDeserialize::deserialize(&mut &round_metadata_data[8..])?;
+        
+        // Validate that the round_id matches the current active round
+        require!(
+            round_id == round_metadata.current_round,
+            ErrorCode::InvalidRoundId
+        );
         
         require!(
             proposal_id < ctx.accounts.system_acc.next_proposal_id,
@@ -889,6 +895,8 @@ pub enum ErrorCode {
     AlreadyVoted,
     #[msg("Account is already initialized")]
     AccountAlreadyInitialized,
+    #[msg("Invalid round ID - can only vote in current active round")]
+    InvalidRoundId,
 }
 
 #[event]
