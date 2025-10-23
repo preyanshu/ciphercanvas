@@ -43,11 +43,13 @@ pub mod proposal_system {
         ctx.accounts.system_acc.next_proposal_id = 0;
         ctx.accounts.system_acc.winning_proposal_id = None; // No winner yet
         ctx.accounts.system_acc.winning_vote_count = None; // No vote count yet
+        ctx.accounts.system_acc.proposal_submission_fee = 1_000_000; // 0.001 SOL fee
 
         // Initialize the round metadata account (separate from system_acc to avoid MXE issues)
         ctx.accounts.round_metadata.bump = ctx.bumps.round_metadata;
         ctx.accounts.round_metadata.current_round = 0; // Start at round 0
         ctx.accounts.round_metadata.proposals_in_current_round = 0; // Start with 0 proposals
+        ctx.accounts.round_metadata.total_voters = 0; // Start with 0 voters
 
         let args = vec![Argument::PlaintextU128(nonce)];
 
@@ -105,6 +107,66 @@ pub mod proposal_system {
 
         let proposal_id_in_round = ctx.accounts.round_metadata.proposals_in_current_round;
         let current_round = ctx.accounts.round_metadata.current_round;
+        let fee = ctx.accounts.system_acc.proposal_submission_fee;
+        
+        // Check if payer has enough SOL for the fee
+        require!(
+            ctx.accounts.payer.lamports() >= fee,
+            ErrorCode::InsufficientFunds
+        );
+
+        // Initialize round escrow if this is the first proposal in the round
+        // Check if escrow is uninitialized by checking if round_id is 0 (default value)
+        // Check if escrow is uninitialized by checking if it's a new account
+if ctx.accounts.round_escrow.round_id == 0 && ctx.accounts.round_escrow.total_collected == 0 {
+    // Only initialize if both round_id and total_collected are 0 (uninitialized)
+    ctx.accounts.round_escrow.bump = ctx.bumps.round_escrow;
+    ctx.accounts.round_escrow.round_id = current_round;
+    ctx.accounts.round_escrow.total_collected = 0;
+    ctx.accounts.round_escrow.total_distributed = 0;
+    ctx.accounts.round_escrow.current_balance = 0;
+    ctx.accounts.round_escrow.round_status = RoundStatus::Active;
+    ctx.accounts.round_escrow.created_at = Clock::get()?.unix_timestamp;
+}
+
+        // Validate escrow is for the correct round
+        require!(
+            ctx.accounts.round_escrow.round_id == current_round,
+            ErrorCode::InvalidEscrowRoundId
+        );
+
+        // Validate escrow is in active status
+        require!(
+            ctx.accounts.round_escrow.round_status == RoundStatus::Active,
+            ErrorCode::RoundEscrowNotActive
+        );
+
+        // REAL SOL TRANSFER: Payer → Round Escrow Account
+        let transfer_instruction = anchor_lang::solana_program::system_instruction::transfer(
+            &ctx.accounts.payer.key(),
+            &ctx.accounts.round_escrow.key(),
+            fee,
+        );
+
+        anchor_lang::solana_program::program::invoke(
+            &transfer_instruction,
+            &[
+                ctx.accounts.payer.to_account_info(),
+                ctx.accounts.round_escrow.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+        )?;
+
+        // Update escrow balance
+        ctx.accounts.round_escrow.total_collected += fee;
+        ctx.accounts.round_escrow.current_balance += fee;
+
+        msg!(
+            "Proposal submission fee collected: {} lamports ({} SOL) for round {}",
+            fee,
+            fee as f64 / 1_000_000_000.0,
+            current_round
+        );
         
         // Initialize the proposal account
         ctx.accounts.proposal_acc.bump = ctx.bumps.proposal_acc;
@@ -267,6 +329,9 @@ pub mod proposal_system {
             timestamp: current_timestamp,
         });
 
+        // Increment total voter count for this round
+        ctx.accounts.round_metadata.total_voters += 1;
+
         let args = vec![
             Argument::ArcisPubkey(vote_encryption_pubkey),
             Argument::PlaintextU128(vote_nonce),
@@ -390,20 +455,29 @@ pub mod proposal_system {
     ) -> Result<()> {
         msg!("Verifying if vote was for winning proposal in round {}", round_id);
         
-      
-
         // Log the seeds used to derive round_history account
         let round_id_bytes = round_id.to_le_bytes();
-     
 
         // Manually derive the round_history PDA to verify
-        let (expected_round_history_pda, round_history_bump) = Pubkey::find_program_address(
+        let (_expected_round_history_pda, _round_history_bump) = Pubkey::find_program_address(
             &[
                 b"voting_round_history",
                 ctx.accounts.system_acc.key().as_ref(),
                 &round_id_bytes,
             ],
             &crate::ID
+        );
+
+        // Manually derive the round_escrow PDA to verify
+        let (expected_round_escrow_pda, _round_escrow_bump) = Pubkey::find_program_address(
+            &[b"round_escrow", &round_id_bytes],
+            &crate::ID
+        );
+        
+        // Verify the round_escrow account
+        require!(
+            ctx.accounts.round_escrow.key() == expected_round_escrow_pda,
+            ErrorCode::InvalidAuthority
         );
         
  
@@ -492,6 +566,13 @@ pub mod proposal_system {
             ComputationOutputs::Success(VerifyWinningVoteOutput { field_0 }) => field_0,
             _ => return Err(ErrorCode::AbortedComputation.into()),
         };
+
+        // Log verification result
+        if verification_result {
+            msg!("✅ Vote was for winning proposal!");
+        } else {
+            msg!("❌ Vote was not for winning proposal");
+        }
 
         // Emit event with the verification result
         emit!(VoteVerificationEvent {
@@ -678,6 +759,8 @@ pub mod proposal_system {
         
         // Reset the round proposal counter for the next round
         ctx.accounts.round_metadata.proposals_in_current_round = 0;
+        // Reset the voter counter for the next round
+        ctx.accounts.round_metadata.total_voters = 0;
 
         msg!(
             "Created round history for round {} - Winner: Proposal {}",
@@ -834,6 +917,14 @@ pub struct SubmitProposal<'info> {
         bump,
     )]
     pub proposal_acc: Account<'info, ProposalAccount>,
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = 8 + RoundEscrowAccount::INIT_SPACE,
+        seeds = [b"round_escrow", round_metadata.current_round.to_le_bytes().as_ref()],
+        bump,
+    )]
+    pub round_escrow: Account<'info, RoundEscrowAccount>,
     pub system_program: Program<'info, System>,
 }
 
@@ -1096,6 +1187,43 @@ pub struct ProposalSystemAccount {
     pub winning_proposal_id: Option<u8>,
     /// Number of votes the winning proposal received (None = not revealed yet)
     pub winning_vote_count: Option<u64>,
+    /// Fixed fee for proposal submission (in lamports)
+    pub proposal_submission_fee: u64,
+}
+
+/// Represents the escrow account for a specific voting round.
+#[account]
+#[derive(InitSpace)]
+pub struct RoundEscrowAccount {
+    /// PDA bump seed
+    pub bump: u8,
+    /// Round ID this escrow belongs to
+    pub round_id: u64,
+    /// Total fees collected in this round
+    pub total_collected: u64,
+    /// Total distributed from this round
+    pub total_distributed: u64,
+    /// Current available balance
+    pub current_balance: u64,
+    /// Status of this round's escrow
+    pub round_status: RoundStatus,
+    /// Timestamp when this round escrow was created
+    pub created_at: i64,
+}
+
+/// Status of a round's escrow account.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq)]
+pub enum RoundStatus {
+    /// Round is ongoing, collecting fees
+    Active,
+    /// Round ended, escrow available for distribution
+    Completed,
+    /// Escrow fully distributed or closed
+    Closed,
+}
+
+impl anchor_lang::Space for RoundStatus {
+    const INIT_SPACE: usize = 1; // 1 byte for the enum discriminant
 }
 
 /// Represents a single proposal submitted to the system.
@@ -1171,6 +1299,8 @@ pub struct RoundMetadataAccount {
     pub current_round: u64,
     /// Number of proposals submitted in the current round
     pub proposals_in_current_round: u8,
+    /// Total number of voters in the current round
+    pub total_voters: u64,
 }
 
 #[queue_computation_accounts("decrypt_vote", payer)]
@@ -1341,6 +1471,9 @@ pub struct VerifyWinningVote<'info> {
     pub round_history: UncheckedAccount<'info>,
     /// CHECK: vote_receipt, manually verified in the function
     pub vote_receipt: UncheckedAccount<'info>,
+    /// CHECK: round_escrow, manually verified in the function
+    #[account(mut)]
+    pub round_escrow: UncheckedAccount<'info>,
 }
 
 #[callback_accounts("verify_winning_vote")]
@@ -1404,6 +1537,12 @@ pub enum ErrorCode {
     InvalidVoteReceipt,
     #[msg("Vote does not match stored vote in receipt")]
     VoteMismatch,
+    #[msg("Insufficient funds for proposal submission fee")]
+    InsufficientFunds,
+    #[msg("Round escrow is not in active status")]
+    RoundEscrowNotActive,
+    #[msg("Invalid escrow round ID")]
+    InvalidEscrowRoundId,
 }
 
 #[event]
@@ -1444,5 +1583,6 @@ pub struct VoteVerificationEvent {
     pub is_winning_vote: bool,
     pub timestamp: i64,
 }
+
 
 
