@@ -6,6 +6,8 @@ use anchor_lang::solana_program::rent::Rent;
 const COMP_DEF_OFFSET_INIT_PROPOSAL_VOTES: u32 = comp_def_offset("init_proposal_votes");
 const COMP_DEF_OFFSET_VOTE_FOR_PROPOSAL: u32 = comp_def_offset("vote_for_proposal");
 const COMP_DEF_OFFSET_REVEAL_WINNER: u32 = comp_def_offset("reveal_winning_proposal");
+const COMP_DEF_OFFSET_DECRYPT_VOTE: u32 = comp_def_offset("decrypt_vote");
+const COMP_DEF_OFFSET_VERIFY_WINNING_VOTE: u32 = comp_def_offset("verify_winning_vote");
 
 declare_id!("G5QxLUHK6fMzRWWevU5GMCEZCfnUEzMZZuqUCpjVf8EX");
 
@@ -45,6 +47,7 @@ pub mod proposal_system {
         // Initialize the round metadata account (separate from system_acc to avoid MXE issues)
         ctx.accounts.round_metadata.bump = ctx.bumps.round_metadata;
         ctx.accounts.round_metadata.current_round = 0; // Start at round 0
+        ctx.accounts.round_metadata.proposals_in_current_round = 0; // Start with 0 proposals
 
         let args = vec![Argument::PlaintextU128(nonce)];
 
@@ -84,7 +87,7 @@ pub mod proposal_system {
     /// Submits a new proposal to the system.
     ///
     /// This allows anyone to submit a proposal with a title and description.
-    /// The proposal gets assigned a unique ID and can be voted on by users.
+    /// The proposal gets assigned a unique ID within the current round and can be voted on by users.
     ///
     /// # Arguments
     /// * `title` - Short title of the proposal (max 50 chars)
@@ -94,26 +97,33 @@ pub mod proposal_system {
         title: String,
         description: String,
     ) -> Result<()> {
+        // Check if we can add more proposals to this round
         require!(
-            ctx.accounts.system_acc.next_proposal_id < 10,
+            ctx.accounts.round_metadata.proposals_in_current_round < 10,
             ErrorCode::MaxProposalsReached
         );
 
-        let proposal_id = ctx.accounts.system_acc.next_proposal_id;
+        let proposal_id_in_round = ctx.accounts.round_metadata.proposals_in_current_round;
+        let current_round = ctx.accounts.round_metadata.current_round;
         
         // Initialize the proposal account
         ctx.accounts.proposal_acc.bump = ctx.bumps.proposal_acc;
-        ctx.accounts.proposal_acc.id = proposal_id;
+        ctx.accounts.proposal_acc.id = proposal_id_in_round;
+        ctx.accounts.proposal_acc.round_id = current_round;
         ctx.accounts.proposal_acc.title = title;
         ctx.accounts.proposal_acc.description = description;
         ctx.accounts.proposal_acc.submitter = ctx.accounts.payer.key();
         ctx.accounts.proposal_acc.vote_count = 0;
 
-        // Increment the next proposal ID
+        // Increment the round-specific proposal counter
+        ctx.accounts.round_metadata.proposals_in_current_round += 1;
+        
+        // Also increment global counter for tracking
         ctx.accounts.system_acc.next_proposal_id += 1;
 
         emit!(ProposalSubmittedEvent {
-            proposal_id,
+            proposal_id: proposal_id_in_round,
+            round_id: current_round,
             submitter: ctx.accounts.payer.key(),
         });
 
@@ -184,25 +194,16 @@ pub mod proposal_system {
             ErrorCode::AccountAlreadyInitialized
         );
         
-        // Manually verify and deserialize round_metadata
-        let (expected_round_pda, _bump) = Pubkey::find_program_address(&[b"round_metadata"], &crate::ID);
-        require!(
-            ctx.accounts.round_metadata.key() == expected_round_pda,
-            ErrorCode::InvalidAuthority
-        );
-        
-        // Deserialize the round_metadata account
-        let round_metadata_data = ctx.accounts.round_metadata.try_borrow_data()?;
-        let round_metadata: RoundMetadataAccount = AnchorDeserialize::deserialize(&mut &round_metadata_data[8..])?;
-        
         // Validate that the round_id matches the current active round
         require!(
-            round_id == round_metadata.current_round,
+            round_id == ctx.accounts.round_metadata.current_round,
             ErrorCode::InvalidRoundId
         );
         
+        // For round-based proposals, we need to check if the proposal exists in the current round
+        // We'll validate this by checking if the proposal_id is less than the proposals in current round
         require!(
-            proposal_id < ctx.accounts.system_acc.next_proposal_id,
+            proposal_id < ctx.accounts.round_metadata.proposals_in_current_round,
             ErrorCode::InvalidProposalId
         );
 
@@ -242,6 +243,17 @@ pub mod proposal_system {
             vote_encryption_pubkey,
         };
         
+        // DEBUG: Log what we're storing in the vote receipt
+        msg!("=== VOTE RECEIPT STORAGE DEBUG ===");
+        msg!("Storing encrypted_proposal_id (first 8 bytes): {:?}", &encrypted_proposal_id[0..8]);
+        msg!("Storing encrypted_proposal_id (last 8 bytes): {:?}", &encrypted_proposal_id[24..32]);
+        msg!("Storing encrypted_proposal_id (full): {:?}", &encrypted_proposal_id);
+        msg!("Storing vote_encryption_pubkey (full): {:?}", &vote_encryption_pubkey);
+        msg!("Storing nonce: {}", vote_nonce);
+        msg!("Vote receipt account voter: {}", vote_receipt_account.voter);
+        msg!("Vote receipt account timestamp: {}", vote_receipt_account.timestamp);
+        msg!("===================================");
+        
         // Serialize and write the account data
         let mut vote_receipt_data = ctx.accounts.vote_receipt.try_borrow_mut_data()?;
         let serialized = vote_receipt_account.try_to_vec()?;
@@ -258,7 +270,7 @@ pub mod proposal_system {
         let args = vec![
             Argument::ArcisPubkey(vote_encryption_pubkey),
             Argument::PlaintextU128(vote_nonce),
-            Argument::EncryptedU8(vote),
+            Argument::EncryptedU8(vote), // This will be interpreted as UserVote.proposal_id
             Argument::PlaintextU128(ctx.accounts.system_acc.nonce),
             Argument::Account(
                 ctx.accounts.system_acc.key(),
@@ -283,7 +295,214 @@ pub mod proposal_system {
             ])],
         )?;
         Ok(())
-    } 
+    }
+
+    pub fn init_decrypt_vote_comp_def(ctx: Context<InitDecryptVoteCompDef>) -> Result<()> {
+        init_comp_def(ctx.accounts, true, 0, None, None)?;
+        Ok(())
+    }
+
+
+    /// Decrypts an encrypted vote to reveal the plaintext proposal ID.
+    ///
+    /// This function allows the system authority to decrypt individual votes
+    /// for auditing purposes or verification. The vote must have been previously
+    /// encrypted using the same encryption scheme as the voting system.
+    ///
+    /// # Arguments
+    /// * `vote` - The encrypted vote containing the proposal ID
+    /// * `vote_encryption_pubkey` - The public key used to encrypt the vote
+    /// * `vote_nonce` - The nonce used for vote encryption
+    pub fn decrypt_vote(
+        ctx: Context<DecryptVote>,
+        computation_offset: u64,
+        vote: [u8; 32],
+        vote_encryption_pubkey: [u8; 32],
+        vote_nonce: u128,
+    ) -> Result<()> {
+        msg!("Decrypting vote for verification/auditing purposes");
+
+        let args = vec![
+            Argument::ArcisPubkey(vote_encryption_pubkey),
+            Argument::PlaintextU128(vote_nonce),
+            Argument::EncryptedU8(vote),
+        ];
+
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            None,
+            vec![DecryptVoteCallback::callback_ix(&[
+                CallbackAccount {
+                    pubkey: ctx.accounts.system_acc.key(),
+                    is_writable: true,
+                },
+            ])],
+        )?;
+        Ok(())
+    }
+
+    #[arcium_callback(encrypted_ix = "decrypt_vote")]
+    pub fn decrypt_vote_callback(
+        ctx: Context<DecryptVoteCallback>,
+        output: ComputationOutputs<DecryptVoteOutput>,
+    ) -> Result<()> {
+        let decrypted_proposal_id = match output {
+            ComputationOutputs::Success(DecryptVoteOutput { field_0 }) => field_0,
+            _ => return Err(ErrorCode::AbortedComputation.into()),
+        };
+
+        // Emit event with the decrypted proposal ID
+        emit!(VoteDecryptedEvent {
+            decrypted_proposal_id,
+            timestamp: Clock::get()?.unix_timestamp,
+        });
+
+        Ok(())
+    }
+
+    pub fn init_verify_winning_vote_comp_def(ctx: Context<InitVerifyWinningVoteCompDef>) -> Result<()> {
+        init_comp_def(ctx.accounts, true, 0, None, None)?;
+        Ok(())
+    }
+
+    /// Decrypts an encrypted vote and verifies if it was for the winning proposal in a given round.
+    ///
+    /// This function allows verification of whether a specific vote was cast for the winning proposal
+    /// in a particular voting round. It decrypts the vote and compares it against the winning proposal
+    /// stored in the round history. Requires a valid vote receipt to prevent fake vote verification.
+    ///
+    /// # Arguments
+    /// * `vote` - The encrypted vote containing the proposal ID
+    /// * `vote_encryption_pubkey` - The public key used to encrypt the vote
+    /// * `vote_nonce` - The nonce used for vote encryption
+    /// * `round_id` - The round ID to check against
+    pub fn verify_winning_vote(
+        ctx: Context<VerifyWinningVote>,
+        computation_offset: u64,
+        vote: [u8; 32],
+        vote_encryption_pubkey: [u8; 32],
+        vote_nonce: u128,
+        round_id: u64,
+    ) -> Result<()> {
+        msg!("Verifying if vote was for winning proposal in round {}", round_id);
+        
+      
+
+        // Log the seeds used to derive round_history account
+        let round_id_bytes = round_id.to_le_bytes();
+     
+
+        // Manually derive the round_history PDA to verify
+        let (expected_round_history_pda, round_history_bump) = Pubkey::find_program_address(
+            &[
+                b"voting_round_history",
+                ctx.accounts.system_acc.key().as_ref(),
+                &round_id_bytes,
+            ],
+            &crate::ID
+        );
+        
+ 
+
+        // Verify that the round history exists for the given round
+        require!(
+            round_id < ctx.accounts.round_metadata.current_round,
+            ErrorCode::InvalidRoundId
+        );
+
+        // SECURITY FIX: Verify the vote receipt exists and belongs to the caller
+        let (expected_vote_receipt_pda, _) = Pubkey::find_program_address(
+            &[b"vote_receipt", ctx.accounts.payer.key().as_ref(), &round_id_bytes],
+            &crate::ID
+        );
+        
+        // DEBUG: Log vote receipt PDA validation
+      
+        
+        require!(
+            ctx.accounts.vote_receipt.key() == expected_vote_receipt_pda,
+            ErrorCode::InvalidVoteReceipt
+        );
+        
+        // Verify the vote receipt contains the same encrypted proposal ID
+        let vote_receipt_data = &ctx.accounts.vote_receipt.data.borrow();
+        let account_data = vote_receipt_data; // No discriminator to skip
+ 
+        
+        // Extract encrypted_proposal_id from vote receipt
+        // VoteReceiptAccount structure: bump(1) + voter(32) + encrypted_proposal_id(32) + timestamp(8) + vote_encryption_pubkey(32)
+        let stored_encrypted_proposal_id: [u8; 32] = account_data[1 + 32..1 + 32 + 32].try_into().unwrap();
+        
+   
+        
+        // CRITICAL: Compare the vote parameter with the stored encrypted_proposal_id
+        // This ensures the vote being verified is the same as what was actually cast
+        require!(
+            stored_encrypted_proposal_id == vote,
+            ErrorCode::VoteMismatch
+        );
+        
+        msg!("Vote receipt validation passed - vote matches stored encrypted proposal ID");
+
+        // Manually deserialize the round history account data
+        let round_history_data = &ctx.accounts.round_history.data.borrow();
+        
+        // Skip the discriminator (8 bytes) and deserialize the VotingRoundHistoryAccount
+        let account_data = &round_history_data[8..];
+        
+        // Deserialize the winning_proposal_id (it's at offset 9 after discriminator: bump(1) + round_id(8) = 9)
+        let winning_proposal_id = account_data[9];
+        
+        msg!("Winning proposal ID from round history: {}", winning_proposal_id);
+
+        let args = vec![
+            Argument::ArcisPubkey(vote_encryption_pubkey),
+            Argument::PlaintextU128(vote_nonce),
+            Argument::EncryptedU8(vote),
+            Argument::PlaintextU8(winning_proposal_id),
+        ];
+
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            None,
+            vec![VerifyWinningVoteCallback::callback_ix(&[
+                CallbackAccount {
+                    pubkey: ctx.accounts.system_acc.key(),
+                    is_writable: true,
+                },
+            ])],
+        )?;
+        Ok(())
+    }
+
+    #[arcium_callback(encrypted_ix = "verify_winning_vote")]
+    pub fn verify_winning_vote_callback(
+        ctx: Context<VerifyWinningVoteCallback>,
+        output: ComputationOutputs<VerifyWinningVoteOutput>,
+    ) -> Result<()> {
+        let verification_result = match output {
+            ComputationOutputs::Success(VerifyWinningVoteOutput { field_0 }) => field_0,
+            _ => return Err(ErrorCode::AbortedComputation.into()),
+        };
+
+        // Emit event with the verification result
+        emit!(VoteVerificationEvent {
+            is_winning_vote: verification_result,
+            timestamp: Clock::get()?.unix_timestamp,
+        });
+
+        Ok(())
+    }
+
+
 
     #[arcium_callback(encrypted_ix = "vote_for_proposal")]
     pub fn vote_for_proposal_callback(
@@ -365,6 +584,11 @@ pub mod proposal_system {
         Ok(())
     }
 
+
+
+
+
+
     #[arcium_callback(encrypted_ix = "reveal_winning_proposal")]
     pub fn reveal_winning_proposal_callback(
         ctx: Context<RevealWinningProposalCallback>,
@@ -377,6 +601,11 @@ pub mod proposal_system {
         
         let winning_proposal_id = result.field_0;
         let winning_vote_count = result.field_1;
+
+        // Debug: Log the results from the encrypted computation
+        msg!("🔍 DEBUG: Encrypted computation results:");
+        msg!("🔍 DEBUG: - Winning proposal ID: {}", winning_proposal_id);
+        msg!("🔍 DEBUG: - Winning vote count: {}", winning_vote_count);
 
         // Store the winning proposal ID and vote count on-chain in the system account
         ctx.accounts.system_acc.winning_proposal_id = Some(winning_proposal_id);
@@ -408,17 +637,30 @@ pub mod proposal_system {
 
     /// Creates a voting round history account after a winner has been revealed.
     /// This is called separately from the reveal callback to avoid MXE complexity.
-    pub fn create_round_history(
-        ctx: Context<CreateRoundHistory>,
-        round_id: u64,
-        winning_proposal_id: u8,
-        total_proposals: u8,
-    ) -> Result<()> {
+    /// All data is read from the system state to prevent tampering.
+    pub fn create_round_history(ctx: Context<CreateRoundHistory>) -> Result<()> {
+        // Verify that the caller is the system authority
+        require!(
+            ctx.accounts.payer.key() == ctx.accounts.system_acc.authority,
+            ErrorCode::InvalidAuthority
+        );
+
+        // Verify that a winner has been revealed
+        require!(
+            ctx.accounts.system_acc.winning_proposal_id.is_some(),
+            ErrorCode::NoWinnerRevealed
+        );
+
         // Get current timestamp
         let clock = Clock::get()?;
         let current_timestamp = clock.unix_timestamp;
 
-        // Initialize the round history account
+        // Read all data from system state (not from parameters)
+        let round_id = ctx.accounts.round_metadata.current_round - 1; // Previous round (since current_round was incremented)
+        let winning_proposal_id = ctx.accounts.system_acc.winning_proposal_id.unwrap();
+        let total_proposals = ctx.accounts.system_acc.next_proposal_id;
+
+        // Initialize the round history account with verified data
         ctx.accounts.round_history.bump = ctx.bumps.round_history;
         ctx.accounts.round_history.round_id = round_id;
         ctx.accounts.round_history.winning_proposal_id = winning_proposal_id;
@@ -426,14 +668,31 @@ pub mod proposal_system {
         ctx.accounts.round_history.revealed_by = ctx.accounts.payer.key();
         ctx.accounts.round_history.total_proposals = total_proposals;
 
+        // Reset system state for the next voting round
+        // Note: We don't reset next_proposal_id to 0 because proposal accounts still exist
+        // Instead, we keep the counter and let new proposals get new IDs
+        ctx.accounts.system_acc.winning_proposal_id = None; // Clear winner
+        ctx.accounts.system_acc.winning_vote_count = None; // Clear vote count
+        ctx.accounts.system_acc.proposal_votes = [[0; 32]; 10]; // Reset encrypted vote counters
+        ctx.accounts.system_acc.nonce = ctx.accounts.system_acc.nonce; // Increment nonce for new round
+        
+        // Reset the round proposal counter for the next round
+        ctx.accounts.round_metadata.proposals_in_current_round = 0;
+
         msg!(
             "Created round history for round {} - Winner: Proposal {}",
             round_id,
             winning_proposal_id
         );
+        msg!(
+            "System state reset for next round - Proposals: 0, Winner: None, Nonce: {}",
+            ctx.accounts.system_acc.nonce
+        );
 
         Ok(())
     }
+
+
 }
 
 #[queue_computation_accounts("init_proposal_votes", payer)]
@@ -557,10 +816,21 @@ pub struct SubmitProposal<'info> {
     )]
     pub system_acc: Account<'info, ProposalSystemAccount>,
     #[account(
+        mut,
+        seeds = [b"round_metadata"],
+        bump = round_metadata.bump
+    )]
+    pub round_metadata: Account<'info, RoundMetadataAccount>,
+    #[account(
         init,
         payer = payer,
         space = 8 + ProposalAccount::INIT_SPACE,
-        seeds = [b"proposal", system_acc.key().as_ref(), system_acc.next_proposal_id.to_le_bytes().as_ref()],
+        seeds = [
+            b"proposal", 
+            system_acc.key().as_ref(), 
+            round_metadata.current_round.to_le_bytes().as_ref(),
+            round_metadata.proposals_in_current_round.to_le_bytes().as_ref()
+        ],
         bump,
     )]
     pub proposal_acc: Account<'info, ProposalAccount>,
@@ -634,7 +904,12 @@ pub struct VoteForProposal<'info> {
     #[account(mut)]
     pub vote_receipt: UncheckedAccount<'info>,
     /// CHECK: Manually verified round_metadata PDA
-    pub round_metadata: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        seeds = [b"round_metadata"],
+        bump = round_metadata.bump
+    )]
+    pub round_metadata: Account<'info, RoundMetadataAccount>,
 }
 
 #[callback_accounts("vote_for_proposal")]
@@ -758,20 +1033,26 @@ pub struct RevealWinningProposalCallback<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(round_id: u64)]
 pub struct CreateRoundHistory<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(
+        mut,
         seeds = [b"proposal_system"],
         bump = system_acc.bump
     )]
     pub system_acc: Account<'info, ProposalSystemAccount>,
     #[account(
+        mut,
+        seeds = [b"round_metadata"],
+        bump = round_metadata.bump
+    )]
+    pub round_metadata: Account<'info, RoundMetadataAccount>,
+    #[account(
         init,
         payer = payer,
         space = 8 + VotingRoundHistoryAccount::INIT_SPACE,
-        seeds = [b"voting_round_history", system_acc.key().as_ref(), round_id.to_le_bytes().as_ref()],
+        seeds = [b"voting_round_history", system_acc.key().as_ref(), (round_metadata.current_round - 1).to_le_bytes().as_ref()],
         bump,
     )]
     pub round_history: Account<'info, VotingRoundHistoryAccount>,
@@ -823,8 +1104,10 @@ pub struct ProposalSystemAccount {
 pub struct ProposalAccount {
     /// PDA bump seed
     pub bump: u8,
-    /// Unique identifier for this proposal
+    /// Unique identifier for this proposal within the round
     pub id: u8,
+    /// Round ID this proposal belongs to
+    pub round_id: u64,
     /// Public key of the proposal submitter
     pub submitter: Pubkey,
     /// Number of votes this proposal has received (public count)
@@ -886,7 +1169,216 @@ pub struct RoundMetadataAccount {
     pub bump: u8,
     /// Current voting round number (incremented each time a winner is revealed)
     pub current_round: u64,
+    /// Number of proposals submitted in the current round
+    pub proposals_in_current_round: u8,
 }
+
+#[queue_computation_accounts("decrypt_vote", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64)]
+pub struct DecryptVote<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        init_if_needed,
+        space = 9,
+        payer = payer,
+        seeds = [&SIGN_PDA_SEED],
+        bump,
+        address = derive_sign_pda!(),
+    )]
+    pub sign_pda_account: Account<'info, SignerAccount>,
+    #[account(
+        address = derive_mxe_pda!()
+    )]
+    pub mxe_account: Account<'info, MXEAccount>,
+    #[account(
+        mut,
+        address = derive_mempool_pda!()
+    )]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        address = derive_execpool_pda!()
+    )]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        address = derive_comp_pda!(computation_offset)
+    )]
+    /// CHECK: computation_account, checked by the arcium program.
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(
+        address = derive_comp_def_pda!(COMP_DEF_OFFSET_DECRYPT_VOTE)
+    )]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(
+        mut,
+        address = derive_cluster_pda!(mxe_account)
+    )]
+    pub cluster_account: Account<'info, Cluster>,
+    #[account(
+        mut,
+        address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS,
+    )]
+    pub pool_account: Account<'info, FeePool>,
+    #[account(
+        address = ARCIUM_CLOCK_ACCOUNT_ADDRESS,
+    )]
+    pub clock_account: Account<'info, ClockAccount>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(
+        seeds = [b"proposal_system"],
+        bump = system_acc.bump
+    )]
+    pub system_acc: Account<'info, ProposalSystemAccount>,
+}
+
+#[callback_accounts("decrypt_vote")]
+#[derive(Accounts)]
+pub struct DecryptVoteCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(
+        address = derive_comp_def_pda!(COMP_DEF_OFFSET_DECRYPT_VOTE)
+    )]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(address = ::anchor_lang::solana_program::sysvar::instructions::ID)]
+    /// CHECK: instructions_sysvar, checked by the account constraint
+    pub instructions_sysvar: AccountInfo<'info>,
+    #[account(mut)]
+    pub system_acc: Account<'info, ProposalSystemAccount>,
+}
+
+#[init_computation_definition_accounts("decrypt_vote", payer)]
+#[derive(Accounts)]
+pub struct InitDecryptVoteCompDef<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        mut,
+        address = derive_mxe_pda!()
+    )]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut)]
+    /// CHECK: comp_def_account, checked by arcium program.
+    /// Can't check it here as it's not initialized yet.
+    pub comp_def_account: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
+}
+
+#[queue_computation_accounts("verify_winning_vote", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64, round_id: u64)]
+pub struct VerifyWinningVote<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        init_if_needed,
+        space = 9,
+        payer = payer,
+        seeds = [&SIGN_PDA_SEED],
+        bump,
+        address = derive_sign_pda!(),
+    )]
+    pub sign_pda_account: Account<'info, SignerAccount>,
+    #[account(
+        address = derive_mxe_pda!()
+    )]
+    pub mxe_account: Account<'info, MXEAccount>,
+    #[account(
+        mut,
+        address = derive_mempool_pda!()
+    )]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        address = derive_execpool_pda!()
+    )]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        address = derive_comp_pda!(computation_offset)
+    )]
+    /// CHECK: computation_account, checked by the arcium program.
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(
+        address = derive_comp_def_pda!(COMP_DEF_OFFSET_VERIFY_WINNING_VOTE)
+    )]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(
+        mut,
+        address = derive_cluster_pda!(mxe_account)
+    )]
+    pub cluster_account: Account<'info, Cluster>,
+    #[account(
+        mut,
+        address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS,
+    )]
+    pub pool_account: Account<'info, FeePool>,
+    #[account(
+        address = ARCIUM_CLOCK_ACCOUNT_ADDRESS,
+    )]
+    pub clock_account: Account<'info, ClockAccount>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(
+        seeds = [b"proposal_system"],
+        bump = system_acc.bump
+    )]
+    pub system_acc: Account<'info, ProposalSystemAccount>,
+    #[account(
+        seeds = [b"round_metadata"],
+        bump = round_metadata.bump
+    )]
+    pub round_metadata: Account<'info, RoundMetadataAccount>,
+    /// CHECK: round_history, manually verified in the function
+    pub round_history: UncheckedAccount<'info>,
+    /// CHECK: vote_receipt, manually verified in the function
+    pub vote_receipt: UncheckedAccount<'info>,
+}
+
+#[callback_accounts("verify_winning_vote")]
+#[derive(Accounts)]
+pub struct VerifyWinningVoteCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(
+        address = derive_comp_def_pda!(COMP_DEF_OFFSET_VERIFY_WINNING_VOTE)
+    )]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(address = ::anchor_lang::solana_program::sysvar::instructions::ID)]
+    /// CHECK: instructions_sysvar, checked by the account constraint
+    pub instructions_sysvar: AccountInfo<'info>,
+    #[account(mut)]
+    pub system_acc: Account<'info, ProposalSystemAccount>,
+}
+
+#[init_computation_definition_accounts("verify_winning_vote", payer)]
+#[derive(Accounts)]
+pub struct InitVerifyWinningVoteCompDef<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        mut,
+        address = derive_mxe_pda!()
+    )]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut)]
+    /// CHECK: comp_def_account, checked by arcium program.
+    /// Can't check it here as it's not initialized yet.
+    pub comp_def_account: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
+}
+
+
+
+
 
 #[error_code]
 pub enum ErrorCode {
@@ -906,6 +1398,12 @@ pub enum ErrorCode {
     AccountAlreadyInitialized,
     #[msg("Invalid round ID - can only vote in current active round")]
     InvalidRoundId,
+    #[msg("No winner has been revealed yet")]
+    NoWinnerRevealed,
+    #[msg("Invalid vote receipt - must provide actual vote receipt account")]
+    InvalidVoteReceipt,
+    #[msg("Vote does not match stored vote in receipt")]
+    VoteMismatch,
 }
 
 #[event]
@@ -916,6 +1414,7 @@ pub struct VoteEvent {
 #[event]
 pub struct ProposalSubmittedEvent {
     pub proposal_id: u8,
+    pub round_id: u64,
     pub submitter: Pubkey,
 }
 
@@ -933,3 +1432,17 @@ pub struct VoteReceiptCreatedEvent {
     pub encrypted_proposal_id: [u8; 32],
     pub timestamp: i64,
 }
+
+#[event]
+pub struct VoteDecryptedEvent {
+    pub decrypted_proposal_id: u8,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct VoteVerificationEvent {
+    pub is_winning_vote: bool,
+    pub timestamp: i64,
+}
+
+

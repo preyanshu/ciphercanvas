@@ -82,4 +82,42 @@ mod circuits {
         
         (winning_proposal, max_votes).reveal()
     }
+
+    /// Decrypts an encrypted vote and returns the plaintext proposal ID.
+    ///
+    /// This function takes an encrypted vote and decrypts it to reveal which proposal
+    /// the voter chose. This is useful for verification purposes or when the system
+    /// authority needs to audit individual votes.
+    ///
+    /// # Arguments
+    /// * `vote_ctxt` - The encrypted vote containing proposal ID
+    ///
+    /// # Returns
+    /// The decrypted proposal ID as a plaintext value
+    #[instruction]
+    pub fn decrypt_vote(vote_ctxt: Enc<Shared, UserVote>) -> u8 {
+        let user_vote = vote_ctxt.to_arcis();
+        user_vote.proposal_id.reveal()
+    }
+
+    /// Decrypts an encrypted vote and verifies if it was for the winning proposal in a given round.
+    ///
+    /// This function decrypts a vote and compares it against the winning proposal ID
+    /// for a specific round. It returns true if the vote was cast for the winning proposal.
+    ///
+    /// # Arguments
+    /// * `vote_ctxt` - The encrypted vote containing proposal ID
+    /// * `winning_proposal_id` - The winning proposal ID for the round
+    ///
+    /// # Returns
+    /// True if the vote was for the winning proposal, false otherwise
+    #[instruction]
+    pub fn verify_winning_vote(vote_ctxt: Enc<Shared, UserVote>, winning_proposal_id: u8) -> bool {
+        let user_vote = vote_ctxt.to_arcis();
+        let decrypted_proposal_id = user_vote.proposal_id.reveal();
+        
+        // Compare the decrypted proposal ID with the winning proposal ID
+        (decrypted_proposal_id == winning_proposal_id).reveal()
+    }
+
 }

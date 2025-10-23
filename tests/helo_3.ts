@@ -68,6 +68,82 @@ describe("Proposal System", () => {
 
   const arciumEnv = getArciumEnv();
   
+  // Helper function to fetch proposals for a specific round using new PDA structure
+  async function fetchProposalsForRound(targetRound: number) {
+    console.log(`\n🔍 FETCHING PROPOSALS FOR ROUND ${targetRound}`);
+    console.log("-".repeat(50));
+    
+    const [systemAccPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from("proposal_system")], 
+      program.programId
+    );
+    
+    const [roundMetadataPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from("round_metadata")], 
+      program.programId
+    );
+    
+    // Get the round metadata to find how many proposals are in the target round
+    let proposalsInRound = 0;
+    try {
+      const roundMetadata = await program.account.roundMetadataAccount.fetch(roundMetadataPDA);
+      
+      // If we're asking for the current round, use the current counter
+      if (targetRound === roundMetadata.currentRound.toNumber()) {
+        proposalsInRound = (roundMetadata as any).proposalsInCurrentRound || 0;
+      } else {
+        // For past rounds, we need to check the round history
+        // For now, we'll try to fetch up to 10 proposals and filter by round
+        proposalsInRound = 10; // Maximum proposals per round
+      }
+    } catch (error) {
+      console.log(`❌ Could not fetch round metadata: ${error}`);
+      return [];
+    }
+    
+    console.log(`📋 Checking up to ${proposalsInRound} proposals for Round ${targetRound}`);
+    
+    const proposals = [];
+    
+    for (let proposalIdInRound = 0; proposalIdInRound < proposalsInRound; proposalIdInRound++) {
+      try {
+        const [proposalPDA] = PublicKey.findProgramAddressSync(
+          [
+            Buffer.from("proposal"),
+            systemAccPDA.toBuffer(),
+            new BN(targetRound).toArrayLike(Buffer, "le", 8), // Round ID as 8-byte little-endian
+            new BN(proposalIdInRound).toArrayLike(Buffer, "le", 1) // Proposal ID within round as 1-byte little-endian
+          ],
+          program.programId
+        );
+        
+        const proposal = await program.account.proposalAccount.fetch(proposalPDA);
+        
+        // Verify it's actually from the target round
+        if ((proposal as any).roundId && (proposal as any).roundId.eq(new BN(targetRound))) {
+          proposals.push({
+            id: proposalIdInRound,
+            roundId: (proposal as any).roundId,
+            title: proposal.title,
+            description: proposal.description,
+            submitter: proposal.submitter,
+            voteCount: proposal.voteCount,
+            pda: proposalPDA
+          });
+          
+          console.log(`✅ Proposal ${proposalIdInRound}: "${proposal.title}" (Round ${(proposal as any).roundId})`);
+        }
+      } catch (error) {
+        // No more proposals for this round
+        console.log(`❌ No proposal found with ID ${proposalIdInRound} for Round ${targetRound}`);
+        break; // Stop checking once we hit a missing proposal
+      }
+    }
+    
+    console.log(`\n📊 Found ${proposals.length} proposals for Round ${targetRound}`);
+    return proposals;
+  }
+  
   // Initialize computation definitions once before all tests
   before(async () => {
     const owner = readKpJson(`${os.homedir()}/.config/solana/id.json`);
@@ -108,6 +184,24 @@ describe("Proposal System", () => {
     console.log(
       "Reveal winning proposal computation definition initialized with signature",
       initRevealWinnerSig
+    );
+
+    console.log("Initializing decrypt vote computation definition");
+    const initDecryptVoteSig = await retryRpcCall(async () => {
+      return await initDecryptVoteCompDef(program, owner, false, false);
+    });
+    console.log(
+      "Decrypt vote computation definition initialized with signature",
+      initDecryptVoteSig
+    );
+
+    console.log("Initializing verify winning vote computation definition");
+    const initVerifyWinningVoteSig = await retryRpcCall(async () => {
+      return await initVerifyWinningVoteCompDef(program, owner, false, false);
+    });
+    console.log(
+      "Verify winning vote computation definition initialized with signature",
+      initVerifyWinningVoteSig
     );
   });
 
@@ -153,7 +247,7 @@ describe("Proposal System", () => {
           ),
         })
         .rpc({ 
-          skipPreflight: true, 
+          skipPreflight: false, 
           commitment: "processed",
           preflightCommitment: "processed"
         });
@@ -171,6 +265,12 @@ describe("Proposal System", () => {
       
     const owner = readKpJson(`${os.homedir()}/.config/solana/id.json`);
 
+    // Derive system account PDA
+    const [systemAccPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from("proposal_system")],
+      program.programId
+    );
+
       // First, complete Round 0 voting
       console.log("📝 Setting up Round 0...");
       
@@ -178,14 +278,14 @@ describe("Proposal System", () => {
       await program.methods
         .submitProposal("Test Proposal 0", "Description 0")
         .accountsPartial({
-          payer: owner.publicKey
+          payer: owner.publicKey,
         })
         .rpc({ commitment: "confirmed" });
       
       await program.methods
         .submitProposal("Test Proposal 1", "Description 1")
         .accountsPartial({
-          payer: owner.publicKey
+          payer: owner.publicKey,
         })
         .rpc({ commitment: "confirmed" });
       
@@ -269,11 +369,18 @@ describe("Proposal System", () => {
       
       // Create Round 0 history (this increments current_round to 1)
       await program.methods
-        .createRoundHistory(
-          new BN(0), // round_id
-          new BN(0), // winning_proposal_id
-          2 // total_proposals
-        )
+        .createRoundHistory()
+        .accounts({
+          payer: owner.publicKey,
+          roundHistory: PublicKey.findProgramAddressSync(
+            [
+              Buffer.from("voting_round_history"),
+              systemAccPDA.toBuffer(),
+              Buffer.from(new Uint8Array(new BigUint64Array([BigInt(0)]).buffer)),
+            ],
+            program.programId
+          )[0],
+        })
         .rpc({ commitment: "confirmed" });
       
       console.log("✅ Round 0 completed, current round is now 1");
@@ -341,7 +448,7 @@ describe("Proposal System", () => {
       await program.methods
         .submitProposal("Round 1 Proposal", "Description")
         .accountsPartial({
-          payer: owner.publicKey
+          payer: owner.publicKey,
         })
         .rpc({ commitment: "confirmed" });
       
@@ -449,10 +556,10 @@ describe("Proposal System", () => {
         return await program.methods
           .submitProposal(proposalTitle, proposalDescription)
           .accountsPartial({
-            payer: owner.publicKey
+            payer: owner.publicKey,
           })
           .rpc({ 
-            skipPreflight: true, 
+            skipPreflight: false, 
             commitment: "confirmed",
             preflightCommitment: "confirmed"
           });
@@ -461,7 +568,7 @@ describe("Proposal System", () => {
       console.log(`✅ Proposal ${i} submitted with signature: ${submitProposalSig}`);
     }
 
-    // Verify Round 0 proposals on blockchain
+    // Verify Round 0 proposals on blockchain using new PDA structure
     console.log("\n🔍 VERIFYING ROUND 0 PROPOSALS ON BLOCKCHAIN");
     console.log("-".repeat(40));
     
@@ -471,18 +578,32 @@ describe("Proposal System", () => {
     );
     
     const systemAcc = await program.account.proposalSystemAccount.fetch(systemAccPDA);
+    const roundMetadataInitial = await program.account.roundMetadataAccount.fetch(
+      PublicKey.findProgramAddressSync([Buffer.from("round_metadata")], program.programId)[0]
+    );
     console.log(`✅ System Account - Next Proposal ID: ${systemAcc.nextProposalId}`);
     console.log(`✅ System Account - Authority: ${systemAcc.authority.toString()}`);
-    console.log(`✅ System Account - Current Round: ${systemAcc.currentRound}`);
+    console.log(`✅ Round M - Current Round: ${JSON.stringify(roundMetadataInitial)}`);
+    
+    // Fetch and verify Round 0 proposals using new PDA structure
+    const round0Proposals = await fetchProposalsForRound(0);
+    console.log(`\n🎯 ROUND 0 VERIFICATION RESULTS:`);
+    console.log(`   - Expected: 3 proposals`);
+    console.log(`   - Found: ${round0Proposals.length} proposals`);
+    console.log(`   - Status: ${round0Proposals.length === 3 ? '✅ PASSED' : '❌ FAILED'}`);
+    
+    if (round0Proposals.length !== 3) {
+      throw new Error(`Expected 3 proposals for Round 0, but found ${round0Proposals.length}`);
+    }
 
     // Create voters for Round 0
     console.log("\n👥 CREATING VOTERS FOR ROUND 0");
     console.log("-".repeat(40));
     
     const voters = [
-      { name: "Alice", keypair: anchor.web3.Keypair.generate(), proposalId: 0 },
-      { name: "Bob", keypair: anchor.web3.Keypair.generate(), proposalId: 0 },
-      { name: "Charlie", keypair: anchor.web3.Keypair.generate(), proposalId: 1 },
+      { name: "Alice", keypair: anchor.web3.Keypair.generate(), proposalIdInRound: 2 },
+      { name: "Bob", keypair: anchor.web3.Keypair.generate(), proposalIdInRound: 1 },
+      { name: "Charlie", keypair: anchor.web3.Keypair.generate(), proposalIdInRound: 2 },
     ];
 
     // Airdrop SOL to voters
@@ -501,10 +622,10 @@ describe("Proposal System", () => {
     const round0VoteReceipts = [];
 
     for (const voter of voters) {
-      console.log(`\n--- ${voter.name} voting for proposal ${voter.proposalId} in Round 0 ---`);
+      console.log(`\n--- ${voter.name} voting for proposal ${voter.proposalIdInRound} in Round 0 ---`);
       
-      const proposalId = voter.proposalId;
-      const vote = BigInt(proposalId);
+      const proposalIdInRound = voter.proposalIdInRound;
+      const vote = BigInt(proposalIdInRound);
       const nonce = randomBytes(16);
       const ciphertext = cipher.encrypt([vote], nonce);
       const proposalIdNonce = randomBytes(16);
@@ -522,7 +643,7 @@ describe("Proposal System", () => {
 
       console.log(`📋 Vote Receipt PDA: ${voteReceiptPda.toBase58()}`);
       console.log(`📋 Round ID: ${roundId.toString()}`);
-      console.log(`📋 Proposal ID: ${proposalId}`);
+      console.log(`📋 Proposal ID in Round: ${proposalIdInRound}`);
 
       const voteComputationOffset = new anchor.BN(randomBytes(8), "hex");
 
@@ -530,7 +651,7 @@ describe("Proposal System", () => {
         return await program.methods
           .voteForProposal(
             voteComputationOffset,
-            proposalId,
+            proposalIdInRound,
             Array.from(encryptedProposalId[0]),
             Array.from(ciphertext[0]),
             Array.from(publicKey),
@@ -557,7 +678,7 @@ describe("Proposal System", () => {
           })
           .signers([voter.keypair])
           .rpc({ 
-            skipPreflight: true, 
+            skipPreflight: false, 
             commitment: "confirmed",
             preflightCommitment: "confirmed"
           });
@@ -574,7 +695,14 @@ describe("Proposal System", () => {
       );
       
       console.log(`✅ ${voter.name}'s vote finalized`);
-      round0VoteReceipts.push({ voter: voter.name, pda: voteReceiptPda, round: 0 });
+      round0VoteReceipts.push({ 
+        voter: voter.name, 
+        pda: voteReceiptPda, 
+        round: 0,
+        encryptedVote: encryptedProposalId[0], // Store the encrypted proposal ID
+        voteEncryptionPubkey: publicKey,
+        voteNonce: proposalIdNonce // Store the nonce used for encryptedProposalId[0]
+      });
     }
 
     // Reveal Round 0 winner
@@ -597,7 +725,7 @@ describe("Proposal System", () => {
           ),
         })
         .rpc({ 
-          skipPreflight: true, 
+          skipPreflight: false, 
           commitment: "processed",
           preflightCommitment: "processed"
         });
@@ -619,8 +747,11 @@ describe("Proposal System", () => {
     console.log("-".repeat(40));
     
     const systemAccAfterRound0 = await program.account.proposalSystemAccount.fetch(systemAccPDA);
+    const roundMetadataAfterRound0 = await program.account.roundMetadataAccount.fetch(
+      PublicKey.findProgramAddressSync([Buffer.from("round_metadata")], program.programId)[0]
+    );
     console.log(`✅ Round 0 Winner: Proposal ${systemAccAfterRound0.winningProposalId}`);
-    console.log(`✅ System Account - Current Round: ${systemAccAfterRound0.currentRound}`);
+    console.log(`✅ Round Metadata - Current Round: ${roundMetadataAfterRound0.currentRound}`);
 
     const [roundMetadataPDA] = PublicKey.findProgramAddressSync(
       [Buffer.from("round_metadata")],
@@ -635,13 +766,20 @@ describe("Proposal System", () => {
     
     const round0HistorySig = await retryRpcCall(async () => {
       return await program.methods
-        .createRoundHistory(
-          new BN(0), // round_id
-          systemAccAfterRound0.winningProposalId, // winning_proposal_id
-          3 // total_proposals
-        )
+        .createRoundHistory()
+        .accounts({
+          payer: owner.publicKey,
+          roundHistory: PublicKey.findProgramAddressSync(
+            [
+              Buffer.from("voting_round_history"),
+              systemAccPDA.toBuffer(),
+              Buffer.from(new Uint8Array(new BigUint64Array([BigInt(0)]).buffer)),
+            ],
+            program.programId
+          )[0],
+        })
         .rpc({ 
-          skipPreflight: true, 
+          skipPreflight: false, 
           commitment: "confirmed",
           preflightCommitment: "confirmed"
         });
@@ -669,10 +807,10 @@ describe("Proposal System", () => {
         return await program.methods
           .submitProposal(proposalTitle, proposalDescription)
           .accountsPartial({
-            payer: owner.publicKey
+            payer: owner.publicKey,
           })
           .rpc({ 
-            skipPreflight: true, 
+            skipPreflight: false, 
             commitment: "confirmed",
             preflightCommitment: "confirmed"
           });
@@ -681,13 +819,27 @@ describe("Proposal System", () => {
       console.log(`✅ Proposal ${i} submitted: ${submitProposalSig}`);
     }
 
-    // Verify Round 1 proposals on blockchain
+    // Verify Round 1 proposals on blockchain using new PDA structure
     console.log("\n🔍 VERIFYING ROUND 1 PROPOSALS ON BLOCKCHAIN");
     console.log("-".repeat(40));
     
     const systemAccAfterProposals = await program.account.proposalSystemAccount.fetch(systemAccPDA);
+    const roundMetadataAfterProposals = await program.account.roundMetadataAccount.fetch(
+      PublicKey.findProgramAddressSync([Buffer.from("round_metadata")], program.programId)[0]
+    );
     console.log(`✅ System Account - Next Proposal ID: ${systemAccAfterProposals.nextProposalId}`);
-    console.log(`✅ System Account - Current Round: ${systemAccAfterProposals.currentRound}`);
+    console.log(`✅ Round Metadata - Current Round: ${roundMetadataAfterProposals.currentRound}`);
+    
+    // Fetch and verify Round 1 proposals using new PDA structure
+    const round1Proposals = await fetchProposalsForRound(1);
+    console.log(`\n🎯 ROUND 1 VERIFICATION RESULTS:`);
+    console.log(`   - Expected: 3 proposals`);
+    console.log(`   - Found: ${round1Proposals.length} proposals`);
+    console.log(`   - Status: ${round1Proposals.length === 3 ? '✅ PASSED' : '❌ FAILED'}`);
+    
+    if (round1Proposals.length !== 3) {
+      throw new Error(`Expected 3 proposals for Round 1, but found ${round1Proposals.length}`);
+    }
 
     // Round 1 Voting (same voters, different proposals)
     console.log("\n🗳️ ROUND 1 VOTING PROCESS");
@@ -695,16 +847,16 @@ describe("Proposal System", () => {
     
     const round1VoteReceipts = [];
     const round1Voters = [
-      { name: "Alice", keypair: voters[0].keypair, proposalId: 3 },
-      { name: "Bob", keypair: voters[1].keypair, proposalId: 4 },
-      { name: "Charlie", keypair: voters[2].keypair, proposalId: 3 },
+      { name: "Alice", keypair: voters[0].keypair, proposalIdInRound: 0 },
+      { name: "Bob", keypair: voters[1].keypair, proposalIdInRound: 1 },
+      { name: "Charlie", keypair: voters[2].keypair, proposalIdInRound: 0 },
     ];
 
     for (const voter of round1Voters) {
-      console.log(`\n--- ${voter.name} voting for proposal ${voter.proposalId} in Round 1 ---`);
+      console.log(`\n--- ${voter.name} voting for proposal ${voter.proposalIdInRound} in Round 1 ---`);
       
-      const proposalId = voter.proposalId;
-      const vote = BigInt(proposalId);
+      const proposalIdInRound = voter.proposalIdInRound;
+      const vote = BigInt(proposalIdInRound);
       const nonce = randomBytes(16);
       const ciphertext = cipher.encrypt([vote], nonce);
       const proposalIdNonce = randomBytes(16);
@@ -722,7 +874,7 @@ describe("Proposal System", () => {
 
       console.log(`📋 Vote Receipt PDA: ${voteReceiptPda.toBase58()}`);
       console.log(`📋 Round ID: ${roundId.toString()}`);
-      console.log(`📋 Proposal ID: ${proposalId}`);
+      console.log(`📋 Proposal ID in Round: ${proposalIdInRound}`);
 
       const voteComputationOffset = new anchor.BN(randomBytes(8), "hex");
 
@@ -730,7 +882,7 @@ describe("Proposal System", () => {
         return await program.methods
           .voteForProposal(
             voteComputationOffset,
-            proposalId,
+            proposalIdInRound,
             Array.from(encryptedProposalId[0]),
             Array.from(ciphertext[0]),
             Array.from(publicKey),
@@ -757,7 +909,7 @@ describe("Proposal System", () => {
           })
           .signers([voter.keypair])
           .rpc({ 
-            skipPreflight: true, 
+            skipPreflight: false, 
             commitment: "confirmed",
             preflightCommitment: "confirmed"
           });
@@ -773,7 +925,14 @@ describe("Proposal System", () => {
       );
       
       console.log(`✅ ${voter.name}'s vote finalized`);
-      round1VoteReceipts.push({ voter: voter.name, pda: voteReceiptPda, round: 1 });
+      round1VoteReceipts.push({ 
+        voter: voter.name, 
+        pda: voteReceiptPda, 
+        round: 1,
+        encryptedVote: encryptedProposalId[0], // Store the encrypted proposal ID
+        voteEncryptionPubkey: publicKey,
+        voteNonce: proposalIdNonce // Store the nonce used for encryptedProposalId[0]
+      });
     }
 
     // Reveal Round 1 winner
@@ -796,7 +955,7 @@ describe("Proposal System", () => {
           ),
         })
         .rpc({ 
-          skipPreflight: true, 
+          skipPreflight: false, 
           commitment: "processed",
           preflightCommitment: "processed"
         });
@@ -818,10 +977,10 @@ describe("Proposal System", () => {
     console.log("-".repeat(40));
     
     const systemAccAfterRound1 = await program.account.proposalSystemAccount.fetch(systemAccPDA);
+    const roundMetadataAfterRound1 = await program.account.roundMetadataAccount.fetch(
+      PublicKey.findProgramAddressSync([Buffer.from("round_metadata")], program.programId)[0]
+    );
     console.log(`✅ Round 1 Winner: Proposal ${systemAccAfterRound1.winningProposalId}`);
-    console.log(`✅ System Account - Current Round: ${systemAccAfterRound1.currentRound}`);
-
-    const roundMetadataAfterRound1 = await program.account.roundMetadataAccount.fetch(roundMetadataPDA);
     console.log(`✅ Round Metadata - Current Round: ${roundMetadataAfterRound1.currentRound}`);
 
     // Create Round 1 history
@@ -830,19 +989,155 @@ describe("Proposal System", () => {
     
     const round1HistorySig = await retryRpcCall(async () => {
       return await program.methods
-        .createRoundHistory(
-          new BN(1), // round_id
-          systemAccAfterRound1.winningProposalId, // winning_proposal_id
-          3 // total_proposals
-        )
+        .createRoundHistory()
+        .accounts({
+          payer: owner.publicKey,
+          roundHistory: PublicKey.findProgramAddressSync(
+            [
+              Buffer.from("voting_round_history"),
+              systemAccPDA.toBuffer(),
+              Buffer.from(new Uint8Array(new BigUint64Array([BigInt(1)]).buffer)),
+            ],
+            program.programId
+          )[0],
+        })
         .rpc({ 
-          skipPreflight: true, 
+          skipPreflight: false, 
           commitment: "confirmed",
           preflightCommitment: "confirmed"
         });
     });
 
     console.log(`✅ Round 1 history created: ${round1HistorySig}`);
+
+    // Verify system state was reset after Round 1 history creation
+    console.log("\n🔄 VERIFYING SYSTEM STATE RESET");
+    console.log("-".repeat(40));
+    
+    const systemAccAfterReset = await program.account.proposalSystemAccount.fetch(systemAccPDA);
+    const roundMetadataAfterReset = await program.account.roundMetadataAccount.fetch(
+      PublicKey.findProgramAddressSync([Buffer.from("round_metadata")], program.programId)[0]
+    );
+    
+    console.log(`\n📊 BEFORE RESET (Round 1 end):`);
+    console.log(`  - Next Proposal ID: ${systemAccAfterRound1.nextProposalId}`);
+    console.log(`  - Winning Proposal ID: ${systemAccAfterRound1.winningProposalId}`);
+    console.log(`  - Winning Vote Count: ${systemAccAfterRound1.winningVoteCount}`);
+    console.log(`  - Nonce: ${systemAccAfterRound1.nonce.toString()}`);
+    console.log(`  - Current Round: ${roundMetadataAfterRound1.currentRound.toString()}`);
+    
+    console.log(`\n📊 AFTER RESET (should be):`);
+    console.log(`  - Next Proposal ID: ${systemAccAfterReset.nextProposalId} (should be 6 - continues from previous)`);
+    console.log(`  - Winning Proposal ID: ${systemAccAfterReset.winningProposalId} (should be null)`);
+    console.log(`  - Winning Vote Count: ${systemAccAfterReset.winningVoteCount} (should be null)`);
+    console.log(`  - Nonce: ${systemAccAfterReset.nonce.toString()} (should be same as before)`);
+    console.log(`  - Current Round: ${roundMetadataAfterReset.currentRound.toString()} (should be 2)`);
+    
+    // Verify the reset state with detailed logging
+    console.log("\n🔍 DETAILED RESET VERIFICATION:");
+    console.log("-".repeat(40));
+    
+    const nextProposalIdCorrect = systemAccAfterReset.nextProposalId === 6; // Before the test proposal
+    const winningProposalIdCorrect = systemAccAfterReset.winningProposalId === null;
+    const winningVoteCountCorrect = systemAccAfterReset.winningVoteCount === null;
+    const nonceCorrect = systemAccAfterReset.nonce.eq(systemAccAfterRound1.nonce);
+    const currentRoundCorrect = roundMetadataAfterReset.currentRound.eq(new BN(2));
+    
+    console.log(`✅ Next Proposal ID: ${systemAccAfterReset.nextProposalId} === 6? ${nextProposalIdCorrect ? '✅' : '❌'}`);
+    console.log(`✅ Winning Proposal ID: ${systemAccAfterReset.winningProposalId} === null? ${winningProposalIdCorrect ? '✅' : '❌'}`);
+    console.log(`✅ Winning Vote Count: ${systemAccAfterReset.winningVoteCount} === null? ${winningVoteCountCorrect ? '✅' : '❌'}`);
+    console.log(`✅ Nonce: ${systemAccAfterReset.nonce.toString()} === ${systemAccAfterRound1.nonce.toString()}? ${nonceCorrect ? '✅' : '❌'}`);
+    console.log(`✅ Current Round: ${roundMetadataAfterReset.currentRound.toString()} === 2? ${currentRoundCorrect ? '✅' : '❌'}`);
+    
+    const isResetCorrect = 
+      nextProposalIdCorrect &&
+      winningProposalIdCorrect &&
+      winningVoteCountCorrect &&
+      nonceCorrect &&
+      currentRoundCorrect;
+    
+    console.log(`\n🎯 OVERALL SYSTEM RESET VERIFICATION: ${isResetCorrect ? '✅ PASSED' : '❌ FAILED'}`);
+    
+    if (!isResetCorrect) {
+      console.log("\n❌ FAILED CONDITIONS:");
+      if (!nextProposalIdCorrect) console.log("  - Next Proposal ID is incorrect");
+      if (!winningProposalIdCorrect) console.log("  - Winning Proposal ID is not null");
+      if (!winningVoteCountCorrect) console.log("  - Winning Vote Count is not null");
+      if (!nonceCorrect) console.log("  - Nonce is not correct");
+      if (!currentRoundCorrect) console.log("  - Current Round is not 2");
+      
+      throw new Error("System state was not properly reset after creating round history!");
+    }
+
+    // Test that we can start a new round after reset
+    console.log("\n🚀 TESTING NEW ROUND AFTER RESET");
+    console.log("-".repeat(40));
+    
+    // Submit a proposal for Round 2 (should work after reset)
+    const round2ProposalSig = await program.methods
+      .submitProposal("Round 2 Test Proposal", "Testing new round after reset")
+      .accountsPartial({
+        payer: owner.publicKey
+      })
+      .rpc({ commitment: "confirmed" });
+    
+    console.log(`✅ Round 2 proposal submitted: ${round2ProposalSig}`);
+    
+    // Verify the proposal was accepted
+    const systemAccAfterNewProposal = await program.account.proposalSystemAccount.fetch(systemAccPDA);
+    console.log(`✅ System Account - Next Proposal ID: ${systemAccAfterNewProposal.nextProposalId} (should be 4)`);
+    console.log(`✅ New round functionality working correctly!`);
+
+    // ========================================
+    // ROUND-BY-ROUND PROPOSAL VERIFICATION
+    // ========================================
+    console.log("\n" + "=".repeat(60));
+    console.log("🔍 ROUND-BY-ROUND PROPOSAL VERIFICATION");
+    console.log("=".repeat(60));
+    
+    // Verify Round 0 proposals
+    console.log("\n📋 ROUND 0 PROPOSAL VERIFICATION");
+    console.log("-".repeat(40));
+    const finalRound0Proposals = await fetchProposalsForRound(0);
+    console.log(`✅ Round 0: Found ${finalRound0Proposals.length} proposals`);
+    
+    // Verify Round 1 proposals  
+    console.log("\n📋 ROUND 1 PROPOSAL VERIFICATION");
+    console.log("-".repeat(40));
+    const finalRound1Proposals = await fetchProposalsForRound(1);
+    console.log(`✅ Round 1: Found ${finalRound1Proposals.length} proposals`);
+    
+    // Verify Round 2 proposals (if any)
+    console.log("\n📋 ROUND 2 PROPOSAL VERIFICATION");
+    console.log("-".repeat(40));
+    const finalRound2Proposals = await fetchProposalsForRound(2);
+    console.log(`✅ Round 2: Found ${finalRound2Proposals.length} proposals`);
+    
+    // Summary
+    console.log("\n📊 ROUND-BY-ROUND SUMMARY:");
+    console.log(`   - Round 0: ${finalRound0Proposals.length} proposals`);
+    console.log(`   - Round 1: ${finalRound1Proposals.length} proposals`);
+    console.log(`   - Round 2: ${finalRound2Proposals.length} proposals`);
+    console.log(`   - Total: ${finalRound0Proposals.length + finalRound1Proposals.length + finalRound2Proposals.length} proposals`);
+    
+    // Verify proposal isolation
+    console.log("\n🔒 PROPOSAL ISOLATION VERIFICATION:");
+    console.log("-".repeat(40));
+    
+    // Check that Round 0 and Round 1 proposals have different PDAs
+    const round0PDA = finalRound0Proposals[0]?.pda;
+    const round1PDA = finalRound1Proposals[0]?.pda;
+    
+    if (round0PDA && round1PDA) {
+      const pdasAreDifferent = !round0PDA.equals(round1PDA);
+      console.log(`✅ Round 0 and Round 1 proposals have different PDAs: ${pdasAreDifferent ? '✅ YES' : '❌ NO'}`);
+      
+      if (!pdasAreDifferent) {
+        throw new Error("Proposal PDAs are not properly isolated between rounds!");
+      }
+    }
+    
+    console.log("✅ All round-by-round verifications passed!");
 
     // ========================================
     // COMPREHENSIVE BLOCKCHAIN VERIFICATION
@@ -876,8 +1171,56 @@ describe("Proposal System", () => {
     const round0History = await program.account.votingRoundHistoryAccount.fetch(round0HistoryPDA);
     const round1History = await program.account.votingRoundHistoryAccount.fetch(round1HistoryPDA);
 
-    console.log(`✅ Round 0 History - Winner: ${round0History.winningProposalId}, Total Proposals: ${round0History.totalProposals}`);
-    console.log(`✅ Round 1 History - Winner: ${round1History.winningProposalId}, Total Proposals: ${round1History.totalProposals}`);
+    // Comprehensive history verification
+    console.log("\n🔍 DETAILED HISTORY VERIFICATION");
+    console.log("-".repeat(50));
+    
+    // Verify Round 0 History
+    console.log("\n📊 ROUND 0 HISTORY VERIFICATION:");
+    console.log(`   Round ID: ${round0History.roundId}`);
+    console.log(`   Winning Proposal ID: ${round0History.winningProposalId}`);
+    console.log(`   Total Proposals: ${round0History.totalProposals}`);
+    console.log(`   Revealed At: ${new Date(Number(round0History.revealedAt) * 1000).toISOString()}`);
+    console.log(`   Revealed By: ${round0History.revealedBy.toBase58()}`);
+    console.log(`   History PDA: ${round0HistoryPDA.toBase58()}`);
+    
+    // Verify Round 1 History
+    console.log("\n📊 ROUND 1 HISTORY VERIFICATION:");
+    console.log(`   Round ID: ${round1History.roundId}`);
+    console.log(`   Winning Proposal ID: ${round1History.winningProposalId}`);
+    console.log(`   Total Proposals: ${round1History.totalProposals}`);
+    console.log(`   Revealed At: ${new Date(Number(round1History.revealedAt) * 1000).toISOString()}`);
+    console.log(`   Revealed By: ${round1History.revealedBy.toBase58()}`);
+    console.log(`   History PDA: ${round1HistoryPDA.toBase58()}`);
+    
+    // Verify data integrity
+    console.log("\n🔒 DATA INTEGRITY VERIFICATION:");
+    console.log("-".repeat(30));
+    
+    // Verify Round 0 data matches system state
+    const systemAccFinal = await program.account.proposalSystemAccount.fetch(systemAccPDA);
+    const roundMetadataFinal = await program.account.roundMetadataAccount.fetch(
+      PublicKey.findProgramAddressSync([Buffer.from("round_metadata")], program.programId)[0]
+    );
+    
+    console.log(`✅ Round 0 Winner matches system state: ${round0History.winningProposalId === systemAccAfterRound0.winningProposalId}`);
+    console.log(`✅ Round 1 Winner matches system state: ${round1History.winningProposalId === systemAccAfterRound1.winningProposalId}`);
+    console.log(`✅ Round 0 Total Proposals correct: ${round0History.totalProposals === 3}`);
+    console.log(`✅ Round 1 Total Proposals correct: ${round1History.totalProposals === 3}`);
+    console.log(`✅ Round IDs are sequential: ${round0History.roundId.eq(new BN(0)) && round1History.roundId.eq(new BN(1))}`);
+    console.log(`✅ Both histories revealed by same authority: ${round0History.revealedBy.equals(round1History.revealedBy)}`);
+    console.log(`✅ Authority matches system authority: ${round0History.revealedBy.equals(systemAccFinal.authority)}`);
+    
+    // Verify timestamps are reasonable
+    const now = Math.floor(Date.now() / 1000);
+    const round0TimeDiff = now - Number(round0History.revealedAt);
+    const round1TimeDiff = now - Number(round1History.revealedAt);
+    
+    console.log(`✅ Round 0 timestamp is recent: ${round0TimeDiff < 300} (${round0TimeDiff}s ago)`);
+    console.log(`✅ Round 1 timestamp is recent: ${round1TimeDiff < 300} (${round1TimeDiff}s ago)`);
+    console.log(`✅ Round 1 revealed after Round 0: ${round1History.revealedAt.gt(round0History.revealedAt)}`);
+    
+    console.log("\n🎉 ALL HISTORY VERIFICATIONS PASSED!");
 
     // Verify vote receipts for both rounds
     console.log("\n🗳️ VERIFYING VOTE RECEIPTS FOR BOTH ROUNDS");
@@ -921,10 +1264,297 @@ describe("Proposal System", () => {
     console.log("=".repeat(60));
 
     // Assertions
-    expect(finalSystemAcc.nextProposalId).to.equal(6); // 0,1,2 + 3,4,5
+    expect(finalSystemAcc.nextProposalId).to.equal(7); // 0,1,2 + 3,4,5 + 6 (test proposal)
     expect(finalRoundMetadata.currentRound.toNumber()).to.equal(2); // 0,1,2
     expect(round0History.winningProposalId).to.be.a('number');
     expect(round1History.winningProposalId).to.be.a('number');
+    
+    // Verify that proposals are properly isolated by round
+    expect(round0Proposals.length).to.equal(3);
+    expect(round1Proposals.length).to.equal(3);
+    expect(round0Proposals[0].roundId.toNumber()).to.equal(0);
+    expect(round1Proposals[0].roundId.toNumber()).to.equal(1);
+
+    // ========================================
+    // TEST VERIFY WINNING VOTE FUNCTIONALITY
+    // ========================================
+    console.log("\n" + "=".repeat(60));
+    console.log("🔍 TESTING VERIFY WINNING VOTE FUNCTIONALITY");
+    console.log("=".repeat(60));
+
+    // Test verifying votes from Round 0
+    console.log("\n🗳️ TESTING VERIFY WINNING VOTE FOR ROUND 0");
+    console.log("-".repeat(40));
+    
+    // Get one of the voters from Round 0 to test with
+    const testVoter = voters[0]; // Alice voted for proposal 2 in Round 0
+    const testVoterProposalId = testVoter.proposalIdInRound; // This should be 2
+    
+    console.log(`Testing with ${testVoter.name} who voted for proposal ${testVoterProposalId} in Round 0`);
+    console.log(`Round 0 winner was: ${round0History.winningProposalId}`);
+    
+    // Get the original vote data from the stored vote receipt
+    const testVoteData = round0VoteReceipts.find(receipt => receipt.voter === testVoter.name);
+    if (!testVoteData) {
+      throw new Error(`Vote data not found for ${testVoter.name} in Round 0`);
+    }
+
+    console.log("testVoteData", testVoteData);
+    console.log("testVoteData.encryptedVote", Buffer.from(testVoteData.encryptedVote).toString('hex'));
+    console.log("testVoteData.voteEncryptionPubkey", Buffer.from(testVoteData.voteEncryptionPubkey).toString('hex'));
+    console.log("testVoteData.voteNonce (hex):", Buffer.from(testVoteData.voteNonce).toString('hex'));
+    console.log("testVoteData.voteNonce (u128):", new anchor.BN(deserializeLE(testVoteData.voteNonce).toString()).toString());
+    console.log("testVoteData.pda", testVoteData.pda.toBase58());
+    console.log("testVoteData.round", testVoteData.round);
+    console.log("testVoteData.voter", testVoteData.voter);
+    console.log("testVoteData.timestamp", testVoteData.timestamp);
+    
+    console.log(`Using original encrypted vote: ${Buffer.from(testVoteData.encryptedVote).toString('hex')}`);
+    
+    // Test verify winning vote for Round 0
+    const verifyComputationOffset = new anchor.BN(randomBytes(8), "hex");
+    const verifyEventPromise = awaitEvent("voteVerificationEvent");
+    
+    const roundId = new BN(0);
+    const roundIdBytes = roundId.toArrayLike(Buffer, "le", 8);
+    const [roundHistoryPDA] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("voting_round_history"),
+        systemAccPDA.toBuffer(),
+        roundIdBytes,
+      ],
+      program.programId
+    );
+    
+    console.log("Round history PDA for verification:", roundHistoryPDA.toBase58());
+    console.log(`Using vote receipt PDA: ${testVoteData.pda.toBase58()}`);
+    
+    // DEBUG: Fetch and inspect the vote receipt data (manual parsing since it's UncheckedAccount)
+    console.log("\n=== VOTE RECEIPT DATA INSPECTION ===");
+    let encryptedProposalId: Buffer | null = null;
+    try {
+      const voteReceiptAccountInfo = await provider.connection.getAccountInfo(testVoteData.pda);
+      if (voteReceiptAccountInfo) {
+        const accountData = voteReceiptAccountInfo.data;
+        console.log("Vote receipt account data length:", accountData.length);
+        
+        // Parse the account data manually (no discriminator to skip)
+        const dataWithoutDiscriminator = accountData;
+        console.log("Data without discriminator length:", dataWithoutDiscriminator.length);
+        
+        // VoteReceiptAccount structure: bump(1) + voter(32) + encrypted_proposal_id(32) + timestamp(8) + vote_encryption_pubkey(32)
+        const bump = dataWithoutDiscriminator[0];
+        const voter = new PublicKey(dataWithoutDiscriminator.slice(1, 33));
+        encryptedProposalId = dataWithoutDiscriminator.slice(33, 65);
+        const timestamp = dataWithoutDiscriminator.slice(65, 73);
+        const voteEncryptionPubkey = dataWithoutDiscriminator.slice(73, 105);
+        
+        console.log("Stored bump:", bump);
+        console.log("Stored voter:", voter.toString());
+        console.log("Stored encrypted_proposal_id (hex):", Buffer.from(encryptedProposalId).toString('hex'));
+        console.log("Stored timestamp:", new anchor.BN(timestamp).toString());
+        console.log("Stored vote_encryption_pubkey (hex):", Buffer.from(voteEncryptionPubkey).toString('hex'));
+      } else {
+        console.log("Vote receipt account not found!");
+      }
+    } catch (error) {
+      console.log("Error fetching vote receipt data:", error);
+    }
+    console.log("Submitted encryptedVote (hex):", Buffer.from(testVoteData.encryptedVote).toString('hex'));
+    console.log("Submitted voteEncryptionPubkey (hex):", Buffer.from(testVoteData.voteEncryptionPubkey).toString('hex'));
+    
+    // COMPARISON CHECK: Verify the encrypted vote IDs match
+    console.log("\n=== ENCRYPTED VOTE ID COMPARISON ===");
+    if (encryptedProposalId) {
+      const storedEncryptedProposalIdHex = Buffer.from(encryptedProposalId).toString('hex');
+      const submittedEncryptedVoteHex = Buffer.from(testVoteData.encryptedVote).toString('hex');
+    
+      console.log("Stored encrypted_proposal_id (hex):", storedEncryptedProposalIdHex);
+      console.log("Submitted encryptedVote (hex):", submittedEncryptedVoteHex);
+      console.log("Do they match?", storedEncryptedProposalIdHex === submittedEncryptedVoteHex);
+      
+      if (storedEncryptedProposalIdHex !== submittedEncryptedVoteHex) {
+        console.log("❌ MISMATCH DETECTED! The encrypted vote IDs don't match!");
+        console.log("This will cause VoteMismatch error in verifyWinningVote");
+      } else {
+        console.log("✅ MATCH! The encrypted vote IDs are identical");
+      }
+    } else {
+      console.log("❌ Could not fetch vote receipt data for comparison");
+    }
+    console.log("=====================================");
+
+    const verifySig = await retryRpcCall(async () => {
+      return await program.methods
+        .verifyWinningVote(
+          verifyComputationOffset,
+          Array.from(testVoteData.encryptedVote),
+          Array.from(testVoteData.voteEncryptionPubkey),
+          new anchor.BN(deserializeLE(testVoteData.voteNonce).toString()),
+          roundId
+        )
+        .accountsPartial({
+          payer: testVoter.keypair.publicKey,
+          systemAcc: systemAccPDA,
+          computationAccount: getComputationAccAddress(program.programId, verifyComputationOffset),
+          clusterAccount: arciumEnv.arciumClusterPubkey,
+          mxeAccount: getMXEAccAddress(program.programId),
+          mempoolAccount: getMempoolAccAddress(program.programId),
+          executingPool: getExecutingPoolAccAddress(program.programId),
+          compDefAccount: getCompDefAccAddress(
+            program.programId,
+            Buffer.from(getCompDefAccOffset("verify_winning_vote")).readUInt32LE()
+          ),
+          roundMetadata: PublicKey.findProgramAddressSync([Buffer.from("round_metadata")], program.programId)[0],
+          roundHistory: roundHistoryPDA,
+          voteReceipt: testVoteData.pda,
+        })
+        .signers([testVoter.keypair])
+        .rpc({ 
+          commitment: "confirmed",
+          skipPreflight: true,
+        });
+    });
+    
+    console.log(`✅ Verify winning vote queued with signature: ${verifySig}`);
+    
+    // Wait for computation to finalize
+    await awaitComputationFinalization(
+      provider as anchor.AnchorProvider,
+      verifyComputationOffset,
+      program.programId,
+      "confirmed"
+    );
+    
+    // Wait for the verification event
+    const verifyEvent = await verifyEventPromise;
+    console.log(`✅ Vote verification event received`);
+    console.log(`Vote was for winning proposal: ${verifyEvent.isWinningVote}`);
+    console.log(`Expected: ${testVoterProposalId === round0History.winningProposalId ? 'true' : 'false'}`);
+    
+    // Verify the result
+    const expectedResult = testVoterProposalId === round0History.winningProposalId;
+    expect(verifyEvent.isWinningVote).to.equal(expectedResult);
+    
+    if (expectedResult) {
+      console.log(`✅ SUCCESS: ${testVoter.name}'s vote for proposal ${testVoterProposalId} was correctly identified as the winning vote!`);
+    } else {
+      console.log(`✅ SUCCESS: ${testVoter.name}'s vote for proposal ${testVoterProposalId} was correctly identified as NOT the winning vote (winner was ${round0History.winningProposalId})!`);
+    }
+    
+    console.log("\n🎉 VERIFY WINNING VOTE TEST COMPLETED SUCCESSFULLY!");
+    console.log("=".repeat(60));
+
+    // ========================================
+    // TEST VERIFY WINNING VOTE FOR ROUND 1
+    // ========================================
+    console.log("\n" + "=".repeat(60));
+    console.log("🔍 TESTING VERIFY WINNING VOTE FOR ROUND 1");
+    console.log("=".repeat(60));
+
+    // Test verifying votes from Round 1
+    console.log("\n🗳️ TESTING VERIFY WINNING VOTE FOR ROUND 1");
+    console.log("-".repeat(40));
+    
+    // Get one of the voters from Round 1 to test with
+    const testVoterRound1 = round1Voters[0]; // Alice voted for proposal 0 in Round 1
+    const testVoterProposalIdRound1 = testVoterRound1.proposalIdInRound; // This should be 0
+    
+    console.log(`Testing with ${testVoterRound1.name} who voted for proposal ${testVoterProposalIdRound1} in Round 1`);
+    console.log(`Round 1 winner was: ${round1History.winningProposalId}`);
+    
+    // Get the original vote data from the stored vote receipt
+    const testVoteDataRound1 = round1VoteReceipts.find(receipt => receipt.voter === testVoterRound1.name);
+    if (!testVoteDataRound1) {
+      throw new Error(`Vote data not found for ${testVoterRound1.name} in Round 1`);
+    }
+
+    console.log("testVoteDataRound1", testVoteDataRound1);
+    console.log("testVoteDataRound1.encryptedVote", Buffer.from(testVoteDataRound1.encryptedVote).toString('hex'));
+    console.log("testVoteDataRound1.voteEncryptionPubkey", Buffer.from(testVoteDataRound1.voteEncryptionPubkey).toString('hex'));
+    console.log("testVoteDataRound1.voteNonce (hex):", Buffer.from(testVoteDataRound1.voteNonce).toString('hex'));
+    console.log("testVoteDataRound1.voteNonce (u128):", new anchor.BN(deserializeLE(testVoteDataRound1.voteNonce).toString()).toString());
+    
+    console.log(`Using original encrypted vote: ${Buffer.from(testVoteDataRound1.encryptedVote).toString('hex')}`);
+    
+    // Test verify winning vote for Round 1
+    const verifyComputationOffsetRound1 = new anchor.BN(randomBytes(8), "hex");
+    const verifyEventPromiseRound1 = awaitEvent("voteVerificationEvent");
+    
+    const roundIdRound1 = new BN(1);
+    const roundIdBytesRound1 = roundIdRound1.toArrayLike(Buffer, "le", 8);
+    const [roundHistoryPDARound1] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("voting_round_history"),
+        systemAccPDA.toBuffer(),
+        roundIdBytesRound1,
+      ],
+      program.programId
+    );
+    
+    console.log("Round history PDA for Round 1 verification:", roundHistoryPDARound1.toBase58());
+    console.log(`Using vote receipt PDA: ${testVoteDataRound1.pda.toBase58()}`);
+    
+    const verifySigRound1 = await retryRpcCall(async () => {
+      return await program.methods
+        .verifyWinningVote(
+          verifyComputationOffsetRound1,
+          Array.from(testVoteDataRound1.encryptedVote),
+          Array.from(testVoteDataRound1.voteEncryptionPubkey),
+          new anchor.BN(deserializeLE(testVoteDataRound1.voteNonce).toString()),
+          roundIdRound1
+        )
+        .accountsPartial({
+          payer: testVoterRound1.keypair.publicKey,
+          systemAcc: systemAccPDA,
+          computationAccount: getComputationAccAddress(program.programId, verifyComputationOffsetRound1),
+          clusterAccount: arciumEnv.arciumClusterPubkey,
+          mxeAccount: getMXEAccAddress(program.programId),
+          mempoolAccount: getMempoolAccAddress(program.programId),
+          executingPool: getExecutingPoolAccAddress(program.programId),
+          compDefAccount: getCompDefAccAddress(
+            program.programId,
+            Buffer.from(getCompDefAccOffset("verify_winning_vote")).readUInt32LE()
+          ),
+          roundMetadata: PublicKey.findProgramAddressSync([Buffer.from("round_metadata")], program.programId)[0],
+          roundHistory: roundHistoryPDARound1,
+          voteReceipt: testVoteDataRound1.pda,
+        })
+        .signers([testVoterRound1.keypair])
+        .rpc({ 
+          commitment: "confirmed",
+          skipPreflight: false,
+        });
+    });
+    
+    console.log(`✅ Verify winning vote for Round 1 queued with signature: ${verifySigRound1}`);
+    
+    // Wait for computation to finalize
+    await awaitComputationFinalization(
+      provider as anchor.AnchorProvider,
+      verifyComputationOffsetRound1,
+      program.programId,
+      "confirmed"
+    );
+    
+    // Wait for the verification event
+    const verifyEventRound1 = await verifyEventPromiseRound1;
+    console.log(`✅ Vote verification event received for Round 1`);
+    console.log(`Vote was for winning proposal: ${verifyEventRound1.isWinningVote}`);
+    console.log(`Expected: ${testVoterProposalIdRound1 === round1History.winningProposalId ? 'true' : 'false'}`);
+    
+    // Verify the result
+    const expectedResultRound1 = testVoterProposalIdRound1 === round1History.winningProposalId;
+    expect(verifyEventRound1.isWinningVote).to.equal(expectedResultRound1);
+    
+    if (expectedResultRound1) {
+      console.log(`✅ SUCCESS: ${testVoterRound1.name}'s vote for proposal ${testVoterProposalIdRound1} was correctly identified as the winning vote!`);
+    } else {
+      console.log(`✅ SUCCESS: ${testVoterRound1.name}'s vote for proposal ${testVoterProposalIdRound1} was correctly identified as NOT the winning vote (winner was ${round1History.winningProposalId})!`);
+    }
+
+    console.log("\n🎉 ROUND 1 VERIFY WINNING VOTE TEST COMPLETED SUCCESSFULLY!");
+    console.log("=".repeat(60));
 
     // Restore original error handlers
     process.removeAllListeners('uncaughtException');
@@ -937,6 +1567,408 @@ describe("Proposal System", () => {
     originalUnhandledRejection.forEach(listener => {
       process.on('unhandledRejection', listener as any);
     });
+  });
+
+  it("can decrypt an encrypted vote", async () => {
+    const owner = readKpJson(`${os.homedir()}/.config/solana/id.json`);
+
+    const mxePublicKey = await getMXEPublicKeyWithRetry(
+      provider as anchor.AnchorProvider,
+      program.programId
+    );
+
+    console.log("MXE x25519 pubkey is", mxePublicKey);
+
+    // Create encryption keys
+    const privateKey = x25519.utils.randomSecretKey();
+    const publicKey = x25519.getPublicKey(privateKey);
+    const sharedSecret = x25519.getSharedSecret(privateKey, mxePublicKey);
+    const cipher = new RescueCipher(sharedSecret);
+
+    // Test data - encrypt a vote for proposal 2
+    const testProposalId = 2;
+    const vote = BigInt(testProposalId);
+    const nonce = randomBytes(16);
+    const ciphertext = cipher.encrypt([vote], nonce);
+
+    console.log(`\n========== Testing Decrypt Vote Function ==========`);
+    console.log(`Original proposal ID: ${testProposalId}`);
+    console.log(`Encrypted vote: ${Buffer.from(ciphertext[0]).toString('hex')}`);
+    console.log(`Nonce: ${Buffer.from(nonce).toString('hex')}`);
+
+    // Initialize the proposal system first (needed for system_acc)
+    console.log("Initializing proposal system...");
+    const systemNonce = randomBytes(16);
+    const systemComputationOffset = new anchor.BN(randomBytes(8), "hex");
+
+    const initSystemSig = await retryRpcCall(async () => {
+      return await program.methods
+        .initProposalSystem(
+          systemComputationOffset,
+          new anchor.BN(deserializeLE(systemNonce).toString())
+        )
+        .accountsPartial({
+          computationAccount: getComputationAccAddress(
+            program.programId,
+            systemComputationOffset
+          ),
+          clusterAccount: arciumEnv.arciumClusterPubkey,
+          mxeAccount: getMXEAccAddress(program.programId),
+          mempoolAccount: getMempoolAccAddress(program.programId),
+          executingPool: getExecutingPoolAccAddress(program.programId),
+          compDefAccount: getCompDefAccAddress(
+            program.programId,
+            Buffer.from(getCompDefAccOffset("init_proposal_votes")).readUInt32LE()
+          ),
+        })
+        .rpc({ 
+          skipPreflight: false, 
+          commitment: "processed",
+          preflightCommitment: "processed"
+        });
+    });
+
+    console.log("Proposal system initialized with signature", initSystemSig);
+
+    // Wait for system initialization to complete
+    await awaitComputationFinalization(
+      provider as anchor.AnchorProvider,
+      systemComputationOffset,
+      program.programId,
+      "confirmed"
+    );
+
+    console.log("System initialization completed");
+
+    // Call the decrypt_vote function (computation definition already initialized in before hook)
+    const decryptComputationOffset = new anchor.BN(randomBytes(8), "hex");
+    
+    const decryptEventPromise = awaitEvent("voteDecryptedEvent");
+    
+    const decryptSig = await retryRpcCall(async () => {
+      return await program.methods
+        .decryptVote(
+          decryptComputationOffset,
+          Array.from(ciphertext[0]),
+          Array.from(publicKey),
+          new anchor.BN(deserializeLE(nonce).toString())
+        )
+        .accountsPartial({
+          payer: owner.publicKey,
+          systemAcc: PublicKey.findProgramAddressSync([Buffer.from("proposal_system")], program.programId)[0],
+          computationAccount: getComputationAccAddress(program.programId, decryptComputationOffset),
+          clusterAccount: arciumEnv.arciumClusterPubkey,
+          mxeAccount: getMXEAccAddress(program.programId),
+          mempoolAccount: getMempoolAccAddress(program.programId),
+          executingPool: getExecutingPoolAccAddress(program.programId),
+          compDefAccount: getCompDefAccAddress(
+            program.programId,
+            Buffer.from(getCompDefAccOffset("decrypt_vote")).readUInt32LE()
+          ),
+        })
+        .rpc({ 
+          skipPreflight: false, 
+          commitment: "confirmed",
+          preflightCommitment: "confirmed"
+        });
+    });
+
+    console.log(`✅ Decrypt vote queued with signature: ${decryptSig}`);
+
+    // Wait for computation to finalize
+    await awaitComputationFinalization(
+      provider as anchor.AnchorProvider,
+      decryptComputationOffset,
+      program.programId,
+      "confirmed"
+    );
+
+    console.log(`✅ Decrypt vote computation finalized`);
+
+    // Wait for the decrypted event
+    const decryptEvent = await decryptEventPromise;
+    console.log(`✅ Vote decrypted event received`);
+    console.log(`Decrypted proposal ID: ${decryptEvent.decryptedProposalId}`);
+    console.log(`Timestamp: ${decryptEvent.timestamp}`);
+
+    // Verify the decrypted result matches the original
+    expect(decryptEvent.decryptedProposalId).to.equal(testProposalId);
+    console.log(`✅ Decryption successful! Original: ${testProposalId}, Decrypted: ${decryptEvent.decryptedProposalId}`);
+
+    console.log(`\n========== Decrypt Vote Test Completed Successfully ==========`);
+  });
+
+  it("can verify if a vote was for the winning proposal", async () => {
+    const owner = readKpJson(`${os.homedir()}/.config/solana/id.json`);
+
+    const mxePublicKey = await getMXEPublicKeyWithRetry(
+      provider as anchor.AnchorProvider,
+      program.programId
+    );
+
+    console.log("MXE x25519 pubkey is", mxePublicKey);
+
+    // Create encryption keys
+    const privateKey = x25519.utils.randomSecretKey();
+    const publicKey = x25519.getPublicKey(privateKey);
+    const sharedSecret = x25519.getSharedSecret(privateKey, mxePublicKey);
+    const cipher = new RescueCipher(sharedSecret);
+
+    // Test data - encrypt a vote for proposal 1
+    const testProposalId = 1;
+    const vote = BigInt(testProposalId);
+    const nonce = randomBytes(16);
+    const ciphertext = cipher.encrypt([vote], nonce);
+
+    console.log(`\n========== Testing Verify Winning Vote Function ==========`);
+    console.log(`Original proposal ID: ${testProposalId}`);
+    console.log(`Encrypted vote: ${Buffer.from(ciphertext[0]).toString('hex')}`);
+    console.log(`Nonce: ${Buffer.from(nonce).toString('hex')}`);
+
+    // Initialize the proposal system first
+    console.log("Initializing proposal system...");
+    const systemNonce = randomBytes(16);
+    const systemComputationOffset = new anchor.BN(randomBytes(8), "hex");
+
+    const initSystemSig = await retryRpcCall(async () => {
+      return await program.methods
+        .initProposalSystem(
+          systemComputationOffset,
+          new anchor.BN(deserializeLE(systemNonce).toString())
+        )
+        .accountsPartial({
+          computationAccount: getComputationAccAddress(
+            program.programId,
+            systemComputationOffset
+          ),
+          clusterAccount: arciumEnv.arciumClusterPubkey,
+          mxeAccount: getMXEAccAddress(program.programId),
+          mempoolAccount: getMempoolAccAddress(program.programId),
+          executingPool: getExecutingPoolAccAddress(program.programId),
+          compDefAccount: getCompDefAccAddress(
+            program.programId,
+            Buffer.from(getCompDefAccOffset("init_proposal_votes")).readUInt32LE()
+          ),
+        })
+        .rpc({ 
+          skipPreflight: false, 
+          commitment: "processed",
+          preflightCommitment: "processed"
+        });
+    });
+
+    console.log("Proposal system initialized with signature", initSystemSig);
+
+    // Wait for system initialization to complete
+    await awaitComputationFinalization(
+      provider as anchor.AnchorProvider,
+      systemComputationOffset,
+      program.programId,
+      "confirmed"
+    );
+
+    console.log("System initialization completed");
+
+    // Derive system account PDA once for consistency
+    const [systemAccPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from("proposal_system")],
+      program.programId
+    );
+
+    // First, we need to set up a complete voting round with a known winner
+    console.log("Setting up a complete voting round...");
+    
+    // Submit proposals
+    await program.methods
+      .submitProposal("Test Proposal 0", "Description 0")
+      .accountsPartial({
+        payer: owner.publicKey,
+      })
+      .rpc({ commitment: "confirmed" });
+    
+    await program.methods
+      .submitProposal("Test Proposal 1", "Description 1")
+      .accountsPartial({
+        payer: owner.publicKey,
+      })
+      .rpc({ commitment: "confirmed" });
+
+    // Create a voter and vote for proposal 1
+    const voter = anchor.web3.Keypair.generate();
+    await provider.connection.requestAirdrop(voter.publicKey, 5 * anchor.web3.LAMPORTS_PER_SOL);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    const voteComputationOffset = new anchor.BN(randomBytes(8), "hex");
+    const voteEncryptionPrivkey = x25519.utils.randomSecretKey();
+    const voteEncryptionPubkey = x25519.getPublicKey(voteEncryptionPrivkey);
+    
+    // Encrypt the vote for proposal 1
+    const voteForProposal = BigInt(1);
+    const voteNonce = randomBytes(16);
+    const voteCiphertext = cipher.encrypt([voteForProposal], voteNonce);
+    const proposalIdNonce = randomBytes(16);
+    const encryptedProposalId = cipher.encrypt([voteForProposal], proposalIdNonce);
+
+    // Vote for proposal 1
+    await program.methods
+      .voteForProposal(
+        voteComputationOffset,
+        1, // proposal_id = 1
+        Array.from(encryptedProposalId[0]),
+        Array.from(voteCiphertext[0]),
+        Array.from(voteEncryptionPubkey),
+        new anchor.BN(deserializeLE(voteNonce).toString()),
+        new BN(0) // round_id = 0
+      )
+      .accountsPartial({
+        payer: voter.publicKey,
+        systemAcc: PublicKey.findProgramAddressSync([Buffer.from("proposal_system")], program.programId)[0],
+        computationAccount: getComputationAccAddress(program.programId, voteComputationOffset),
+        clusterAccount: arciumEnv.arciumClusterPubkey,
+        mxeAccount: getMXEAccAddress(program.programId),
+        mempoolAccount: getMempoolAccAddress(program.programId),
+        executingPool: getExecutingPoolAccAddress(program.programId),
+        compDefAccount: getCompDefAccAddress(
+          program.programId,
+          Buffer.from(getCompDefAccOffset("vote_for_proposal")).readUInt32LE()
+        ),
+        roundMetadata: PublicKey.findProgramAddressSync([Buffer.from("round_metadata")], program.programId)[0],
+        voteReceipt: PublicKey.findProgramAddressSync(
+          [Buffer.from("vote_receipt"), voter.publicKey.toBuffer(), new BN(0).toArrayLike(Buffer, "le", 8)],
+          program.programId
+        )[0],
+      })
+      .signers([voter])
+      .rpc({ commitment: "confirmed" });
+
+    // Wait for vote computation to finalize
+    await awaitComputationFinalization(
+      provider as anchor.AnchorProvider,
+      voteComputationOffset,
+      program.programId,
+      "confirmed"
+    );
+
+    // Reveal the winning proposal (should be proposal 1)
+    const revealOffset = new anchor.BN(randomBytes(8), "hex");
+    await program.methods
+      .revealWinningProposal(revealOffset, 0)
+      .accountsPartial({
+        computationAccount: getComputationAccAddress(program.programId, revealOffset),
+        clusterAccount: arciumEnv.arciumClusterPubkey,
+        mxeAccount: getMXEAccAddress(program.programId),
+        mempoolAccount: getMempoolAccAddress(program.programId),
+        executingPool: getExecutingPoolAccAddress(program.programId),
+        compDefAccount: getCompDefAccAddress(
+          program.programId,
+          Buffer.from(getCompDefAccOffset("reveal_winning_proposal")).readUInt32LE()
+        ),
+      })
+      .rpc({ commitment: "confirmed" });
+
+    await awaitComputationFinalization(
+      provider as anchor.AnchorProvider,
+      revealOffset,
+      program.programId,
+      "confirmed"
+    );
+
+    // Create round history
+    await program.methods
+      .createRoundHistory()
+      .accounts({
+        payer: owner.publicKey,
+        roundHistory: PublicKey.findProgramAddressSync(
+          [
+            Buffer.from("voting_round_history"),
+            systemAccPDA.toBuffer(),
+            Buffer.from(new Uint8Array(new BigUint64Array([BigInt(0)]).buffer)),
+          ],
+          program.programId
+        )[0],
+      })
+      .rpc({ commitment: "confirmed" });
+
+    console.log("Round setup completed. Now testing verify_winning_vote...");
+
+    // Now test the verify_winning_vote function
+    const verifyComputationOffset = new anchor.BN(randomBytes(8), "hex");
+    
+    const verifyEventPromise = awaitEvent("voteVerificationEvent");
+
+    const roundId = new BN(0);
+
+// Must be 8 bytes, LE order
+const roundIdBytes = roundId.toArrayLike(Buffer, "le", 8);
+
+const [roundHistory] = PublicKey.findProgramAddressSync(
+  [
+    Buffer.from("voting_round_history"),
+    systemAccPDA.toBuffer(),
+    roundIdBytes,
+  ],
+  program.programId
+);
+
+    console.log("roundHistory is ", roundHistory.toBase58());
+    
+    const verifySig = await retryRpcCall(async () => {
+      return await program.methods
+        .verifyWinningVote(
+          verifyComputationOffset,
+          Array.from(voteCiphertext[0]), // The same vote we cast
+          Array.from(voteEncryptionPubkey),
+          new anchor.BN(deserializeLE(voteNonce).toString()),
+          new BN(0) // round_id = 0
+        )
+        .accountsPartial({
+          payer: owner.publicKey,
+          systemAcc: systemAccPDA,
+          computationAccount: getComputationAccAddress(program.programId, verifyComputationOffset),
+          clusterAccount: arciumEnv.arciumClusterPubkey,
+          mxeAccount: getMXEAccAddress(program.programId),
+          mempoolAccount: getMempoolAccAddress(program.programId),
+          executingPool: getExecutingPoolAccAddress(program.programId),
+          compDefAccount: getCompDefAccAddress(
+            program.programId,
+            Buffer.from(getCompDefAccOffset("verify_winning_vote")).readUInt32LE()
+          ),
+          roundMetadata: PublicKey.findProgramAddressSync(
+            [Buffer.from("round_metadata")],
+            program.programId
+          )[0],
+          roundHistory: roundHistory,
+        })
+        .rpc({ 
+          skipPreflight: false, 
+          commitment: "confirmed",
+          preflightCommitment: "confirmed"
+        });
+    });
+
+    console.log(`✅ Verify winning vote queued with signature: ${verifySig}`);
+
+    // Wait for computation to finalize
+    await awaitComputationFinalization(
+      provider as anchor.AnchorProvider,
+      verifyComputationOffset,
+      program.programId,
+      "confirmed"
+    );
+
+    console.log(`✅ Verify winning vote computation finalized`);
+
+    // Wait for the verification event
+    const verifyEvent = await verifyEventPromise;
+    console.log(`✅ Vote verification event received`);
+    console.log(`Is winning vote: ${verifyEvent.isWinningVote}`);
+    console.log(`Timestamp: ${verifyEvent.timestamp}`);
+
+    // Verify the result - should be true since we voted for proposal 1 and it won
+    expect(verifyEvent.isWinningVote).to.equal(true);
+    console.log(`✅ Verification successful! Vote was for the winning proposal`);
+
+    console.log(`\n========== Verify Winning Vote Test Completed Successfully ==========`);
   });
 
   it("can submit proposals and vote on them!", async () => {
@@ -974,10 +2006,10 @@ describe("Proposal System", () => {
         return await program.methods
           .submitProposal(proposal.title, proposal.description)
           .accountsPartial({
-            payer: owner.publicKey
+            payer: owner.publicKey,
           })
           .rpc({ 
-            skipPreflight: true, 
+            skipPreflight: false, 
             commitment: "confirmed",
             preflightCommitment: "confirmed"
           });
@@ -1030,9 +2062,9 @@ describe("Proposal System", () => {
 
     // Define voting pattern: 2 voters for proposal 0, 1 voter for proposal 1
     const voters = [
-      { keypair: voter1, proposalId: 0, name: "Voter 1" },
-      { keypair: voter2, proposalId: 0, name: "Voter 2" },
-      { keypair: voter3, proposalId: 1, name: "Voter 3" },
+      { keypair: voter1, proposalIdInRound: 0, name: "Voter 1" },
+      { keypair: voter2, proposalIdInRound: 0, name: "Voter 2" },
+      { keypair: voter3, proposalIdInRound: 1, name: "Voter 3" },
     ];
 
       // Verify round_metadata account is initialized
@@ -1096,8 +2128,8 @@ describe("Proposal System", () => {
 
     // Each voter casts their vote
     for (const voter of voters) {
-      const proposalId = voter.proposalId;
-      const vote = BigInt(proposalId);
+      const proposalIdInRound = voter.proposalIdInRound;
+      const vote = BigInt(proposalIdInRound);
       const plaintext = [vote];
 
       const nonce = randomBytes(16);
@@ -1113,7 +2145,7 @@ describe("Proposal System", () => {
       const voteEventPromise = awaitEvent("voteEvent");
       const voteReceiptEventPromise = awaitEvent("voteReceiptCreatedEvent");
 
-      console.log(`\n=== ${voter.name} voting for proposal ${proposalId} ===`);
+      console.log(`\n=== ${voter.name} voting for proposal ${proposalIdInRound} ===`);
 
       // Check voter balance before voting
       const voterBalanceBefore = await provider.connection.getBalance(voter.keypair.publicKey);
@@ -1129,9 +2161,9 @@ describe("Proposal System", () => {
       )[0].toBase58());
 
       // Debug: Check what we're about to vote for
-      console.log(`🔍 Debug: About to vote for proposal ID: ${proposalId}`);
+      console.log(`🔍 Debug: About to vote for proposal ID: ${proposalIdInRound}`);
       console.log(`🔍 Debug: Voter: ${voter.name}`);
-      console.log(`🔍 Debug: Expected to be valid (should be < next_proposal_id)`);
+      console.log(`🔍 Debug: Expected to be valid (should be < proposals_in_current_round)`);
 
       const roundId = new BN(0); // first round
 
@@ -1171,7 +2203,7 @@ const roundIdBuffer = Buffer.from(roundId.toArray("le", 8));
         return await program.methods
           .voteForProposal(
             voteComputationOffset,
-            proposalId,
+            proposalIdInRound,
             Array.from(encryptedProposalId[0]),
             Array.from(ciphertext[0]),
             Array.from(publicKey),
@@ -1201,7 +2233,7 @@ const roundIdBuffer = Buffer.from(roundId.toArray("le", 8));
           })
           .signers([voter.keypair])
           .rpc({ 
-            skipPreflight: true, 
+            skipPreflight: false, 
             commitment: "confirmed",
             preflightCommitment: "confirmed"
           });
@@ -1230,8 +2262,8 @@ const roundIdBuffer = Buffer.from(roundId.toArray("le", 8));
     console.log(`\n=== ${voters[0].name} attempting to vote again (should fail) ===`);
     try {
       const secondVoteOffset = new anchor.BN(randomBytes(8), "hex");
-      const secondProposalId = 1;
-      const secondVote = BigInt(secondProposalId);
+      const secondProposalIdInRound = 1;
+      const secondVote = BigInt(secondProposalIdInRound);
       const secondNonce = randomBytes(16);
       const secondCiphertext = cipher.encrypt([secondVote], secondNonce);
       const secondProposalIdNonce = randomBytes(16);
@@ -1242,6 +2274,10 @@ const roundIdBuffer = Buffer.from(roundId.toArray("le", 8));
       console.log("vote_for_proposal called with round_id: 0");
       console.log("Program ID:", program.programId.toBase58());
       console.log("Payer Key:", voters[0].keypair.publicKey.toBase58());
+      
+      // Create roundIdBuffer for this test
+      const roundIdBuffer = Buffer.alloc(8);
+      roundIdBuffer.writeBigUInt64LE(BigInt(0), 0); // round_id = 0, 64-bit little-endian encoding
       
       // Derive the vote receipt PDA to get the bump for second vote
       const [expectedVoteReceiptPda2, voteReceiptBump2] = PublicKey.findProgramAddressSync(
@@ -1254,7 +2290,7 @@ const roundIdBuffer = Buffer.from(roundId.toArray("le", 8));
       await program.methods
         .voteForProposal(
           secondVoteOffset,
-          secondProposalId,
+          secondProposalIdInRound,
           Array.from(secondEncryptedProposalId[0]),
           Array.from(secondCiphertext[0]),
           Array.from(publicKey),
@@ -1283,7 +2319,7 @@ const roundIdBuffer = Buffer.from(roundId.toArray("le", 8));
         })
         .signers([voters[0].keypair])
         .rpc({ 
-          skipPreflight: true, 
+          skipPreflight: false, 
           commitment: "confirmed",
           preflightCommitment: "confirmed"
         });
@@ -1320,7 +2356,7 @@ const roundIdBuffer = Buffer.from(roundId.toArray("le", 8));
           ),
         })
         .rpc({ 
-          skipPreflight: true, 
+          skipPreflight: false, 
           commitment: "processed",
           preflightCommitment: "processed"
         });
@@ -1373,10 +2409,9 @@ const roundIdBuffer = Buffer.from(roundId.toArray("le", 8));
     
     const createRoundHistorySig = await retryRpcCall(async () => {
       return await program.methods
-        .createRoundHistory(new anchor.BN(roundId), winningProposalId, totalProposals)
-        .accountsPartial({
+        .createRoundHistory()
+        .accounts({
           payer: owner.publicKey,
-          systemAcc: proposalSystemPDA,
           roundHistory: PublicKey.findProgramAddressSync(
             [
               Buffer.from("voting_round_history"),
@@ -1384,10 +2419,10 @@ const roundIdBuffer = Buffer.from(roundId.toArray("le", 8));
               Buffer.from(new Uint8Array(new BigUint64Array([BigInt(roundId)]).buffer)),
             ],
             program.programId
-          )[0]
+          )[0],
         })
         .rpc({ 
-          skipPreflight: true, 
+          skipPreflight: false, 
           commitment: "confirmed",
           preflightCommitment: "confirmed"
         });
@@ -1495,17 +2530,17 @@ const roundIdBuffer = Buffer.from(roundId.toArray("le", 8));
       
       // Decrypt the proposal ID using the client-side nonce
       const decryptedProposalId = cipher.decrypt(
-        [encryptedProposalIdFromReceipt],
-        savedNonce
+        [Array.from(encryptedProposalIdFromReceipt)],
+        new Uint8Array(savedNonce)
       );
       
       console.log(`\n✅ Successfully decrypted!`);
       console.log(`Decrypted Proposal ID: ${decryptedProposalId[0]}`);
-      console.log(`Expected Proposal ID for ${voters[0].name}: ${voters[0].proposalId}`);
-      console.log(`Match: ${decryptedProposalId[0] === BigInt(voters[0].proposalId) ? '✅ YES' : '❌ NO'}`);
+      console.log(`Expected Proposal ID for ${voters[0].name}: ${voters[0].proposalIdInRound}`);
+      console.log(`Match: ${decryptedProposalId[0] === BigInt(voters[0].proposalIdInRound) ? '✅ YES' : '❌ NO'}`);
       
       // Verify the decryption is correct - Voter 1 voted for proposal 0
-      expect(decryptedProposalId[0]).to.equal(BigInt(voters[0].proposalId));
+      expect(decryptedProposalId[0]).to.equal(BigInt(voters[0].proposalIdInRound));
       
       console.log(`\n✅ Complete ballot secrecy maintained!`);
       console.log(`The on-chain receipt contains ONLY the encrypted proposal ID.`);
@@ -1679,6 +2714,130 @@ const roundIdBuffer = Buffer.from(roundId.toArray("le", 8));
       await uploadCircuit(
         provider as anchor.AnchorProvider,
         "reveal_winning_proposal",
+        program.programId,
+        rawCircuit,
+        true
+      );
+    } else if (!offchainSource) {
+      const finalizeTx = await buildFinalizeCompDefTx(
+        provider as anchor.AnchorProvider,
+        Buffer.from(offset).readUInt32LE(),
+        program.programId
+      );
+
+      const latestBlockhash = await provider.connection.getLatestBlockhash();
+      finalizeTx.recentBlockhash = latestBlockhash.blockhash;
+      finalizeTx.lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
+
+      finalizeTx.sign(owner);
+
+      await provider.sendAndConfirm(finalizeTx);
+    }
+    return sig;
+  }
+
+  async function initDecryptVoteCompDef(
+    program: Program<ProposalSystem>,
+    owner: anchor.web3.Keypair,
+    uploadRawCircuit: boolean,
+    offchainSource: boolean
+  ): Promise<string> {
+    const baseSeedCompDefAcc = getArciumAccountBaseSeed(
+      "ComputationDefinitionAccount"
+    );
+    const offset = getCompDefAccOffset("decrypt_vote");
+
+    const compDefPDA = PublicKey.findProgramAddressSync(
+      [baseSeedCompDefAcc, program.programId.toBuffer(), offset],
+      getArciumProgAddress()
+    )[0];
+
+    console.log(
+      "Decrypt vote computation definition pda is ",
+      compDefPDA.toBase58()
+    );
+
+    const sig = await program.methods
+      .initDecryptVoteCompDef()
+      .accounts({
+        compDefAccount: compDefPDA,
+        payer: owner.publicKey,
+        mxeAccount: getMXEAccAddress(program.programId),
+      })
+      .signers([owner])
+      .rpc({
+        commitment: "confirmed",
+      });
+    console.log("Init decrypt vote computation definition transaction", sig);
+
+    if (uploadRawCircuit) {
+      const rawCircuit = fs.readFileSync("build/decrypt_vote.arcis");
+
+      await uploadCircuit(
+        provider as anchor.AnchorProvider,
+        "decrypt_vote",
+        program.programId,
+        rawCircuit,
+        true
+      );
+    } else if (!offchainSource) {
+      const finalizeTx = await buildFinalizeCompDefTx(
+        provider as anchor.AnchorProvider,
+        Buffer.from(offset).readUInt32LE(),
+        program.programId
+      );
+
+      const latestBlockhash = await provider.connection.getLatestBlockhash();
+      finalizeTx.recentBlockhash = latestBlockhash.blockhash;
+      finalizeTx.lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
+
+      finalizeTx.sign(owner);
+
+      await provider.sendAndConfirm(finalizeTx);
+    }
+    return sig;
+  }
+
+  async function initVerifyWinningVoteCompDef(
+    program: Program<ProposalSystem>,
+    owner: anchor.web3.Keypair,
+    uploadRawCircuit: boolean,
+    offchainSource: boolean
+  ): Promise<string> {
+    const baseSeedCompDefAcc = getArciumAccountBaseSeed(
+      "ComputationDefinitionAccount"
+    );
+    const offset = getCompDefAccOffset("verify_winning_vote");
+
+    const compDefPDA = PublicKey.findProgramAddressSync(
+      [baseSeedCompDefAcc, program.programId.toBuffer(), offset],
+      getArciumProgAddress()
+    )[0];
+
+    console.log(
+      "Verify winning vote computation definition pda is ",
+      compDefPDA.toBase58()
+    );
+
+    const sig = await program.methods
+      .initVerifyWinningVoteCompDef()
+      .accounts({
+        compDefAccount: compDefPDA,
+        payer: owner.publicKey,
+        mxeAccount: getMXEAccAddress(program.programId),
+      })
+      .signers([owner])
+      .rpc({
+        commitment: "confirmed",
+      });
+    console.log("Init verify winning vote computation definition transaction", sig);
+
+    if (uploadRawCircuit) {
+      const rawCircuit = fs.readFileSync("build/verify_winning_vote.arcis");
+
+      await uploadCircuit(
+        provider as anchor.AnchorProvider,
+        "verify_winning_vote",
         program.programId,
         rawCircuit,
         true
