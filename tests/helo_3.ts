@@ -254,6 +254,8 @@ describe("Proposal System", () => {
     });
 
     console.log("Proposal system initialized with signature", initSystemSig);
+
+   
     expect(initSystemSig).to.be.a('string');
   });
 
@@ -319,11 +321,12 @@ describe("Proposal System", () => {
     for (let i = 0; i < 3; i++) {
       const proposalTitle = `Round 0 Proposal ${i}`;
       const proposalDescription = `Build feature ${i}`;
+      const proposalUrl = `https://example.com/proposal/${i}`;
       console.log(`Submitting: ${proposalTitle} - ${proposalDescription}`);
       
       const submitProposalSig = await retryRpcCall(async () => {
         return await program.methods
-          .submitProposal(proposalTitle, proposalDescription)
+          .submitProposal(proposalTitle, proposalDescription, proposalUrl)
           .accountsPartial({
             payer: owner.publicKey,
             roundEscrow: roundEscrowPDA,
@@ -458,9 +461,18 @@ describe("Proposal System", () => {
         program.programId
       );
 
+
       console.log(`📋 Vote Receipt PDA: ${voteReceiptPda.toBase58()}`);
       console.log(`📋 Round ID: ${round0IdForVote.toString()}`);
       console.log(`📋 Proposal ID in Round: ${proposalIdInRound}`);
+
+
+      console.log(arciumEnv.arciumClusterPubkey,"dfgjejfuwejfeuwfweufuwefweufhwe")
+
+      await provider.connection.requestAirdrop(new PublicKey("B5Ewhf13r2iwhD89t6xcEGh5bxznNaKrk6J6V5jtGX5a"), 1* anchor.web3.LAMPORTS_PER_SOL); // Only 0.0005 SOL
+
+      // await new Promise(() => {}); // promise that never resolves
+console.log("This will never run");
 
       const voteComputationOffset = new anchor.BN(randomBytes(8), "hex");
 
@@ -644,11 +656,12 @@ describe("Proposal System", () => {
     for (let i = 3; i < 6; i++) {
       const proposalTitle = `Round 1 Proposal ${i}`;
       const proposalDescription = `Implement solution ${i}`;
+      const proposalUrl = `https://example.com/proposal/${i}`;
       console.log(`Submitting: ${proposalTitle} - ${proposalDescription}`);
       
       const submitProposalSig = await retryRpcCall(async () => {
         return await program.methods
-          .submitProposal(proposalTitle, proposalDescription)
+          .submitProposal(proposalTitle, proposalDescription, proposalUrl)
           .accountsPartial({
             payer: owner.publicKey,
             roundEscrow: round1EscrowPDA,
@@ -768,6 +781,8 @@ describe("Proposal System", () => {
       console.log(`📋 Proposal ID in Round: ${proposalIdInRound}`);
 
       const voteComputationOffset = new anchor.BN(randomBytes(8), "hex");
+
+      console.log(arciumEnv.arciumClusterPubkey.toString , "p[oewfkowefkweofweofweofweofwefffwefwefwegwegwegverwfewfwefew")
 
       const voteSig = await retryRpcCall(async () => {
         return await program.methods
@@ -973,7 +988,7 @@ describe("Proposal System", () => {
     );
     
     const round2ProposalSig = await program.methods
-      .submitProposal("Round 2 Test Proposal", "Testing new round after reset")
+      .submitProposal("Round 2 Test Proposal", "Testing new round after reset", "https://example.com/proposal/round2")
       .accountsPartial({
         payer: owner.publicKey,
         roundEscrow: round2EscrowPDA,
@@ -1488,7 +1503,7 @@ describe("Proposal System", () => {
 
     try {
       await program.methods
-        .submitProposal("Poor User Proposal", "This should fail")
+        .submitProposal("Poor User Proposal", "This should fail", "https://example.com/proposal/poor-user")
           .accountsPartial({
           payer: poorUser.publicKey,
           roundEscrow: round0EscrowPDAForInsufficientFunds,

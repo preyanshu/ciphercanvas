@@ -9,7 +9,7 @@ const COMP_DEF_OFFSET_REVEAL_WINNER: u32 = comp_def_offset("reveal_winning_propo
 const COMP_DEF_OFFSET_DECRYPT_VOTE: u32 = comp_def_offset("decrypt_vote");
 const COMP_DEF_OFFSET_VERIFY_WINNING_VOTE: u32 = comp_def_offset("verify_winning_vote");
 
-declare_id!("G5QxLUHK6fMzRWWevU5GMCEZCfnUEzMZZuqUCpjVf8EX");
+declare_id!("GnBSkvi8ZRCrtvz6huKMeZF7GrnDtHHyh73GWA2eXmuw");
 
 #[arcium_program]
 pub mod proposal_system {
@@ -50,6 +50,7 @@ pub mod proposal_system {
         ctx.accounts.round_metadata.current_round = 0; // Start at round 0
         ctx.accounts.round_metadata.proposals_in_current_round = 0; // Start with 0 proposals
         ctx.accounts.round_metadata.total_voters = 0; // Start with 0 voters
+        ctx.accounts.round_metadata.round_started = Clock::get()?.unix_timestamp; // Initialize with current timestamp
 
         let args = vec![Argument::PlaintextU128(nonce)];
 
@@ -88,16 +89,18 @@ pub mod proposal_system {
 
     /// Submits a new proposal to the system.
     ///
-    /// This allows anyone to submit a proposal with a title and description.
+    /// This allows anyone to submit a proposal with a title, description, and URL.
     /// The proposal gets assigned a unique ID within the current round and can be voted on by users.
     ///
     /// # Arguments
     /// * `title` - Short title of the proposal (max 50 chars)
     /// * `description` - Detailed description of the proposal (max 200 chars)
+    /// * `url` - URL associated with the proposal (max 200 chars)
     pub fn submit_proposal(
         ctx: Context<SubmitProposal>,
         title: String,
         description: String,
+        url: String,
     ) -> Result<()> {
         // Check if we can add more proposals to this round
         require!(
@@ -174,6 +177,7 @@ if ctx.accounts.round_escrow.round_id == 0 && ctx.accounts.round_escrow.total_co
         ctx.accounts.proposal_acc.round_id = current_round;
         ctx.accounts.proposal_acc.title = title;
         ctx.accounts.proposal_acc.description = description;
+        ctx.accounts.proposal_acc.url = url;
         ctx.accounts.proposal_acc.submitter = ctx.accounts.payer.key();
         ctx.accounts.proposal_acc.vote_count = 0;
 
@@ -699,6 +703,9 @@ if ctx.accounts.round_escrow.round_id == 0 && ctx.accounts.round_escrow.total_co
 
         // Increment the round counter for the next voting round
         ctx.accounts.round_metadata.current_round += 1;
+        
+        // Update the round start timestamp
+        ctx.accounts.round_metadata.round_started = Clock::get()?.unix_timestamp;
 
         msg!(
             "Round {} completed - Winner: Proposal {} with {} votes", 
@@ -1246,6 +1253,9 @@ pub struct ProposalAccount {
     /// Detailed description of the proposal (max 200 characters)
     #[max_len(200)]
     pub description: String,
+    /// URL associated with the proposal (max 200 characters)
+    #[max_len(200)]
+    pub url: String,
 }
 
 /// Represents a vote receipt for a voter.
@@ -1301,6 +1311,8 @@ pub struct RoundMetadataAccount {
     pub proposals_in_current_round: u8,
     /// Total number of voters in the current round
     pub total_voters: u64,
+    /// Unix timestamp when the current round started
+    pub round_started: i64,
 }
 
 #[queue_computation_accounts("decrypt_vote", payer)]
