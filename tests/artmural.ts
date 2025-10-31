@@ -30,7 +30,9 @@ import { expect } from "chai";
 // Program configuration
 const PROGRAM_ID = "Hk2AAbbrrjJFH4Wkm3DsudgGSWp2ftgL97dzfgxUkkzq";
 const CLUSTER_OFFSET = 1078779259;
-const DEVNET_RPC_URL = "https://devnet.helius-rpc.com/?api-key=2b8f604a-8422-4d06-b2ae-bfb46afcc995";
+const DEVNET_RPC_URL = process.env.HELIUS_API_KEY 
+  ? `https://devnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
+  : "https://api.devnet.solana.com";
 const DEVNET_COMMITMENT = "confirmed";
 
 // Check if running on devnet or localnet

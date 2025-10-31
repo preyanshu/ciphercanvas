@@ -10,6 +10,11 @@ build
 encrypted-ixs/src/main.rs
 artifacts/
 
+# Environment variables
+.env.local
+.env
+*.env
+
 # Frontend build artifacts
 frontend/.next
 frontend/.env.local
