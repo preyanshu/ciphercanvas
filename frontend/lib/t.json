@@ -1,0 +1,24 @@
+{
+    "name": "Quantum Chicken - 01",
+    "symbol": "CCANVAS",
+    "description": "An AI-generated artwork from CipherCanvas’s decentralized mural. Private votes, oracle-revealed winners, automated rewards.",
+    "image": "https://res.cloudinary.com/dbo7hzofg/image/upload/v1761854760/Screenshot_from_2025-10-31_01-34-31_apzxkn.png",
+    "seller_fee_basis_points": 0,
+    "attributes": [
+      { "trait_type": "Collection", "value": "CipherCanvas" },
+      { "trait_type": "Edition", "value": "01" },
+      { "trait_type": "Medium", "value": "AI Image" },
+      { "trait_type": "Verifiability", "value": "On-Chain" },
+      { "trait_type": "Privacy", "value": "Encrypted Vote" }
+    ],
+    "properties": {
+      "category": "image",
+      "files": [
+        {
+          "uri": "https://res.cloudinary.com/dbo7hzofg/image/upload/v1761854760/Screenshot_from_2025-10-31_01-34-31_apzxkn.png",
+          "type": "image/png"
+        }
+      ],
+      "creators": []
+    }
+  }

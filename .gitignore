@@ -9,3 +9,8 @@ encrypted-ixs/arcis_temp_target
 build
 encrypted-ixs/src/main.rs
 artifacts/
+
+# Frontend build artifacts
+frontend/.next
+frontend/.env.local
+frontend/node_modules

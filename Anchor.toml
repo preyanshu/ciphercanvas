@@ -6,14 +6,14 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-helo_3 = "GnBSkvi8ZRCrtvz6huKMeZF7GrnDtHHyh73GWA2eXmuw"
+artmural = "Hk2AAbbrrjJFH4Wkm3DsudgGSWp2ftgL97dzfgxUkkzq"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
 cluster = "localnet"
-wallet = "~/.config/solana/id.json"
+wallet = "/home/preyanshu/test-wallet.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
@@ -31,107 +31,3 @@ program = "/home/preyanshu/helo_3/artifacts/arcium_program_0.3.0.so"
 [[test.genesis]]
 address = "BKck65TgoKRokMjQM3datB9oRwJ8rAj2jxPXvHXUvcL6"
 program = "/home/preyanshu/multipartycomputation_arcium/artifacts/arcium_program_0.3.0.so"
-
-[[test.validator.account]]
-address = "FHriyvoZotYiFnbUzKFjzRSb2NiaC8RPWY7jtKuKhg65"
-filename = "artifacts/arcium_clock.json"
-
-[[test.validator.account]]
-address = "7MGSS4iKNM4sVib7bDZDJhVqB6EcchPwVnTKenCY1jt3"
-filename = "artifacts/arcium_fee_pool.json"
-
-[[test.validator.account]]
-address = "BoVUVSJAhob2cvM5z4JZTdS6VWRSznh3bbzQD1TFjvDP"
-filename = "artifacts/arx_mint.json"
-
-[[test.validator.account]]
-address = "2uzU1MU3S3T3yd7Yu4avvQ5qNcJ6ZTujF8vv4UmJFQpm"
-filename = "artifacts/wallet_acc_2uzU_FQpm.json"
-
-[[test.validator.account]]
-address = "633K2WZKmYkMVjohS9V9qCBVr3v7mRuj4pb8UYL4UANS"
-filename = "artifacts/arx_ata_2uzU_FQpm.json"
-
-[[test.validator.account]]
-address = "34EdfAgyz1p9dxLQovj2hLVxctYagdNko78aNqe5mtpy"
-filename = "artifacts/wallet_acc_34Ed_mtpy.json"
-
-[[test.validator.account]]
-address = "CVN2ByHTcDzMj22RaMtsvQ3eYbGS1FfhcBSJMmPze3ZE"
-filename = "artifacts/wallet_acc_callback_CVN2_e3ZE.json"
-
-[[test.validator.account]]
-address = "HxXrgsW1iT4dWsmDyTxYWbRd5xFikn1dn718XvE9cXvx"
-filename = "artifacts/arx_ata_34Ed_mtpy.json"
-
-[[test.validator.account]]
-address = "BqSZkN4te9ehLCLicnyztJFowAeF2TrxjSdbuLhZDGyE"
-filename = "artifacts/operator_acc_34Ed_mtpy.json"
-
-[[test.validator.account]]
-address = "ELoRR19zrps1G3UYKcAxr7LKbw3kbqkVUXVY9dETMWN7"
-filename = "artifacts/arx_node_34Ed_mtpy.json"
-
-[[test.validator.account]]
-address = "6xZEQf3uVSbHXn2gArVPa5BaVCSW3xGQD1hKCASKf7Mm"
-filename = "artifacts/wallet_acc_6xZE_f7Mm.json"
-
-[[test.validator.account]]
-address = "8XtD7anuAxTKjJnbAJJZ2WjfXXKXmwxQjBJDeTowmwSp"
-filename = "artifacts/wallet_acc_callback_8XtD_mwSp.json"
-
-[[test.validator.account]]
-address = "6P1NBjmcmcxAip1ExJhYfHqei5aAoFpanvrZTNCdsTEi"
-filename = "artifacts/arx_ata_6xZE_f7Mm.json"
-
-[[test.validator.account]]
-address = "744aZsiWy24Y5NUD2vXPQESd9tks1wx1CSa9RBUtYB75"
-filename = "artifacts/operator_acc_6xZE_f7Mm.json"
-
-[[test.validator.account]]
-address = "XdfSwb8ZajhN7CerfBSJVhyfx5fyLtv34QVKSRgMFA9"
-filename = "artifacts/arx_node_6xZE_f7Mm.json"
-
-[[test.validator.account]]
-address = "GgSqqAyH7AVY3Umcv8NvncrjFaNJuQLmxzxFxPoPW2Yd"
-filename = "artifacts/cluster_acc_0.json"
-
-[[test.validator.account]]
-address = "FrzKNbXVbZmsS87b1BjA9dpW4kNy5yMskgJXdbg5wLf3"
-filename = "artifacts/reveal_winning_proposal_raw_circuit_0.json"
-
-[[test.validator.account]]
-address = "Cf2Cu8c3R8vLadrjqqn77HiYj1L7nABYWfXQ4T127L8w"
-filename = "artifacts/verify_winning_vote_raw_circuit_0.json"
-
-[[test.validator.account]]
-address = "4YvM9pAjRYrvGwvsCmG7h3TZbsArPvkwvYWmWgWbSZuF"
-filename = "artifacts/vote_for_proposal_raw_circuit_0.json"
-
-[[test.validator.account]]
-address = "ApMZAQwyKBPh8iHnBoWrqpVgPeVkC1ipBtrBqfEcXn6y"
-filename = "artifacts/decrypt_vote_raw_circuit_0.json"
-
-[[test.validator.account]]
-address = "ZonMyTTe7MXnWn8wM2CX6pEfsJEemHkkZj5cd3oFjzU"
-filename = "artifacts/init_proposal_votes_raw_circuit_0.json"
-
-[[test.validator.account]]
-address = "C8Z582d7Qvt62FnzjzN5cmRbtDp1rsvoj8mUB1Bpd5tB"
-filename = "artifacts/mxe_keygen_comp_def.json"
-
-[[test.validator.account]]
-address = "CfYHjb8DqDPCi51YHjnfPv35zDyUs1xzLYUgd239kteg"
-filename = "artifacts/mxe_keygen_comp.json"
-
-[[test.validator.account]]
-address = "8KBqEKR64uj3Gg9tW4zKduAjmEeTbYRLpPdqoadzCf74"
-filename = "artifacts/mxe_acc.json"
-
-[[test.validator.account]]
-address = "9TDJD9NjyPrXJUmqWwz6exK9Q97NJ3PdFHFjEiato4gd"
-filename = "artifacts/mempool_acc.json"
-
-[[test.validator.account]]
-address = "4CUGTUo8SDJgBmjgqShPAphQQ4NZac5QA4PCcyFVVxFW"
-filename = "artifacts/executing_pool_acc.json"
